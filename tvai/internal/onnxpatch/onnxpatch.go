@@ -165,18 +165,14 @@ func PatchReduceMeanFp32(model []byte) ([]byte, bool, error) {
 	if err != nil {
 		return nil, false, err
 	}
-	// 检测 fp16：扫描 input(11)/output(12)/value_info(13) 的 elem_type。
-	fp16 := false
+	// 建立 name -> elem_type 映射（来自 input/output/value_info）。
+	nameType := make(map[string]int)
 	for _, f := range gf {
 		if f.num == 11 || f.num == 12 || f.num == 13 {
-			if et, ok := valueInfoElemType(f.raw); ok && et == wdFloat16 {
-				fp16 = true
-				break
+			if nm, et, ok := valueInfoNameType(f.raw); ok {
+				nameType[nm] = et
 			}
 		}
-	}
-	if !fp16 {
-		return nil, false, nil // fp32 模型无需修复
 	}
 
 	// 重建节点列表：field 1 (node)。
@@ -198,13 +194,18 @@ func PatchReduceMeanFp32(model []byte) ([]byte, bool, error) {
 			newGraph = append(newGraph, f)
 			continue
 		}
-		count++
 		in0, ok1 := firstString(nf, 1)
 		out0, ok2 := firstString(nf, 2)
 		if !ok1 || !ok2 {
 			newGraph = append(newGraph, f)
 			continue
 		}
+		// 仅修补输出为 fp16 的 ReduceMean（fp16 累加溢出）。fp32 输出无需修补。
+		if nameType[out0] != wdFloat16 {
+			newGraph = append(newGraph, f)
+			continue
+		}
+		count++
 		midIn := fmt.Sprintf("%s__rmf32i%d", in0, idx)
 		midOut := fmt.Sprintf("%s__rmf32o%d", out0, idx)
 
@@ -230,34 +231,35 @@ func PatchReduceMeanFp32(model []byte) ([]byte, bool, error) {
 	return writeFields(mf), true, nil
 }
 
-// valueInfoElemType 从 ValueInfoProto 中解析出张量 elem_type。
-func valueInfoElemType(vi []byte) (int, bool) {
+// valueInfoNameType 从 ValueInfoProto 中解析出张量名与 elem_type。
+func valueInfoNameType(vi []byte) (string, int, bool) {
 	vf, err := parseFields(vi)
 	if err != nil {
-		return 0, false
+		return "", 0, false
 	}
+	name, _ := strField(vf, 1)
 	for _, f := range vf {
 		if f.num == 2 && f.wire == 2 { // type: TypeProto
 			tf, err := parseFields(f.raw)
 			if err != nil {
-				return 0, false
+				return name, 0, false
 			}
 			for _, g := range tf {
 				if g.num == 1 && g.wire == 2 { // tensor_type
 					tt, err := parseFields(g.raw)
 					if err != nil {
-						return 0, false
+						return name, 0, false
 					}
 					for _, h := range tt {
 						if h.num == 1 && h.wire == 0 { // elem_type
-							return int(varintVal(h.raw)), true
+							return name, int(varintVal(h.raw)), true
 						}
 					}
 				}
 			}
 		}
 	}
-	return 0, false
+	return name, 0, false
 }
 
 // buildCastNode 构造一个 Cast 节点的 NodeProto 字节。

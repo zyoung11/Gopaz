@@ -49,6 +49,8 @@ type Model struct {
 	CenterIdx int
 	// 插帧：一次推理产出的中间帧数
 	OutFrames int
+	// 插帧：两级结构时的底部模型文件（如 Aion 需先用 aiob 产 8 帧作 in8x）
+	BottomFile string
 	// 插帧：主帧是输入中的哪两个（in1,in2）
 	UsesIn0In3 bool
 }
@@ -76,6 +78,11 @@ var apolloTiles = [][2]int{
 	{288, 288}, {352, 256}, {480, 384}, {384, 480}, {384, 576},
 	{416, 576}, {672, 384}, {576, 448}, {672, 576},
 	{704, 1152}, {1056, 1088}, {1344, 1152},
+}
+
+// 插帧模型（Aion）的 tile 尺寸，均为 4 的倍数（in8x 需 tile/4 整除）。元素为 {W, H}。
+var interpTiles = [][2]int{
+	{256, 256}, {384, 480}, {480, 384}, {384, 384}, {384, 576}, {576, 384},
 }
 
 // Registry 返回全部可用模型家族，按 CLI Key 索引。
@@ -107,9 +114,9 @@ func Registry() map[string]*Model {
 		},
 		"aion": {
 			Key: "aion", Short: "aion", Version: "1", Kind: KindInterp,
-			Display: "Aion", Scales: nil, TileHW: nil,
+			Display: "Aion", Scales: nil, TileHW: interpTiles,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
-			OutFrames: 16, UsesIn0In3: true,
+			OutFrames: 16, UsesIn0In3: true, BottomFile: "aiob-v1-fp16-ox.tz",
 		},
 	}
 }
@@ -131,8 +138,20 @@ func Keys() []string {
 // TZPath 在 modelDir 中定位该模型在给定 tile 尺寸与倍率下的 .tz 文件路径。
 // tileW/tileH 传 0 表示单文件模型（Aion）。文件名按 HxW 约定生成。
 func (m *Model) TZPath(modelDir string, tileW, tileH, scale int) (string, error) {
-	if m.SingleFile != "" {
-		p := filepath.Join(modelDir, m.SingleFile)
+	return m.tzPathNamed(m.SingleFile, modelDir, tileW, tileH, scale)
+}
+
+// BottomTZPath 定位底部模型（两级插帧）的 .tz 路径，无则返回空。
+func (m *Model) BottomTZPath(modelDir string) (string, error) {
+	if m.BottomFile == "" {
+		return "", nil
+	}
+	return m.tzPathNamed(m.BottomFile, modelDir, 0, 0, 0)
+}
+
+func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale int) (string, error) {
+	if single != "" {
+		p := filepath.Join(modelDir, single)
 		if _, err := os.Stat(p); err != nil {
 			return "", fmt.Errorf("模型文件缺失: %s", p)
 		}

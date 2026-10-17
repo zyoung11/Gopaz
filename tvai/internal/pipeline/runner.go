@@ -39,6 +39,8 @@ type Runner struct {
 	// 时序状态：上一帧的输出（输出分辨率）与上一帧输入（输入分辨率）。
 	prevHR   *Frame
 	prevIn   *Frame
+	// 两级插帧的底部模型会话（如 Aion 的 aiob）。
+	bottom *ort.Session
 }
 
 // outputName 返回模型首个输出的张量名。
@@ -134,6 +136,21 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), sceneThreshold: 0.04}
 
+	// 两级插帧：加载底部模型（如 Aion 的 aiob）。
+	if bpath, _ := m.BottomTZPath(cfg.ModelDir); bpath != "" {
+		bonnx, err := prepareOnnx(bpath, cfg.WorkDir, m.Short+"_bottom")
+		if err != nil {
+			sess.Destroy()
+			return nil, fmt.Errorf("准备底部模型失败: %w", err)
+		}
+		bs, err := ort.NewSession(env, bonnx, so)
+		if err != nil {
+			sess.Destroy()
+			return nil, fmt.Errorf("加载底部模型失败: %w", err)
+		}
+		r.bottom = bs
+	}
+
 	// 默认参数：GUI 空间 0-100 → 模型空间 Min..Max。
 	for _, p := range m.Params {
 		v, ok := cfg.Params[p.Key]
@@ -153,11 +170,98 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	return r, nil
 }
 
+// prepareOnnx 解包 .tz、应用 ReduceMean 补丁并写出 ONNX，返回路径。
+func prepareOnnx(tzPath, workDir, name string) (string, error) {
+	b, err := os.ReadFile(tzPath)
+	if err != nil {
+		return "", err
+	}
+	raw, err := tz.Extract(b, tz.Password)
+	if err != nil {
+		return "", err
+	}
+	if p, changed, perr := onnxpatch.PatchReduceMeanFp32(raw); perr == nil && changed {
+		raw = p
+	}
+	os.MkdirAll(workDir, 0o755)
+	p := filepath.Join(workDir, name+".onnx")
+	if err := os.WriteFile(p, raw, 0o644); err != nil {
+		return "", err
+	}
+	return p, nil
+}
+
+// runBottom 用底部模型（aiob）对 4 帧 tile 推理，返回 [tw,th,24] 原始数据（8 帧）。
+func (r *Runner) runBottom(tiles []*Frame) (*Frame, error) {
+	tw, th := r.tileW, r.tileH
+	var names []string
+	var tensors []*ort.Tensor
+	defer func() {
+		for _, t := range tensors {
+			t.Destroy()
+		}
+	}()
+	for i := 0; i < 4; i++ {
+		t, err := frameTensor(tiles[i], ort.Float)
+		if err != nil {
+			return nil, err
+		}
+		names = append(names, fmt.Sprintf("in%d", i))
+		tensors = append(tensors, t)
+	}
+	outs, err := r.bottom.Run(names, tensors, []string{"out"})
+	if err != nil {
+		return nil, err
+	}
+	defer outs[0].Destroy()
+	vals, err := readTensorFloats(outs[0], tw*th*24, ort.Float)
+	if err != nil {
+		return nil, err
+	}
+	return &Frame{W: tw, H: th, Data: vals}, nil
+}
+
+// downsampleRaw 对 [W,H,ch] 原始数据按 factor 做块平均降采样。
+func downsampleRaw(raw *Frame, factor int) *Frame {
+	ch := len(raw.Data) / (raw.W * raw.H)
+	if ch <= 0 {
+		ch = 1
+	}
+	ow, oh := raw.W/factor, raw.H/factor
+	if ow < 1 {
+		ow = 1
+	}
+	if oh < 1 {
+		oh = 1
+	}
+	out := &Frame{W: ow, H: oh, Data: make([]float32, ow*oh*ch)}
+	inv := float32(1) / float32(factor*factor)
+	for j := 0; j < oh; j++ {
+		for i := 0; i < ow; i++ {
+			for c := 0; c < ch; c++ {
+				var sum float32
+				for dy := 0; dy < factor; dy++ {
+					for dx := 0; dx < factor; dx++ {
+						si := ((j*factor+dy)*raw.W + (i*factor+dx)) * ch
+						sum += raw.Data[si+c]
+					}
+				}
+				out.Data[(j*ow+i)*ch+c] = sum * inv
+			}
+		}
+	}
+	return out
+}
+
 // Close 释放会话。
 func (r *Runner) Close() {
 	if r.sess != nil {
 		r.sess.Destroy()
 		r.sess = nil
+	}
+	if r.bottom != nil {
+		r.bottom.Destroy()
+		r.bottom = nil
 	}
 }
 
@@ -189,30 +293,57 @@ func (r *Runner) runInterpTile(tiles []*Frame) (*Frame, error) {
 			t.Destroy()
 		}
 	}()
-	if m.SingleFile == "" {
-		// Apollo：in0..in3
-		if len(tiles) < 4 {
-			return nil, fmt.Errorf("%s 需要 4 帧输入", m.Key)
+	if len(tiles) < 4 {
+		return nil, fmt.Errorf("%s 需要 4 帧输入", m.Key)
+	}
+	for i := 0; i < 4; i++ {
+		name := fmt.Sprintf("in%d", i)
+		t, err := frameTensor(tiles[i], r.inputType(name))
+		if err != nil {
+			return nil, err
 		}
-		for i := 0; i < 4; i++ {
-			name := fmt.Sprintf("in%d", i)
-			t, err := frameTensor(tiles[i], r.inputType(name))
+		inputNames = append(inputNames, name)
+		tensors = append(tensors, t)
+	}
+	if m.SingleFile != "" {
+		// Aion 两级：先用底部模型 aiob 产 8 帧，降采样到 tile/4 作 in8x。
+		h8, w8 := th/4, tw/4
+		if h8 < 1 {
+			h8 = 1
+		}
+		if w8 < 1 {
+			w8 = 1
+		}
+		var in8 []float32
+		if r.bottom != nil {
+			bo, err := r.runBottom(tiles)
 			if err != nil {
 				return nil, err
 			}
-			inputNames = append(inputNames, name)
-			tensors = append(tensors, t)
+			down := downsampleRaw(bo, 4)
+			in8 = down.Data
+			if len(in8) != h8*w8*24 {
+				// 尺寸不符时退回零（保守）。
+				in8 = make([]float32, h8*w8*24)
+			}
+		} else {
+			in8 = make([]float32, h8*w8*24)
 		}
-	} else {
-		return nil, fmt.Errorf("模型 %s 的插帧输入构造尚未实现", m.Key)
+		zd := []int64{1, int64(h8), int64(w8), 24}
+		zt, err := ort.NewTensor(zd, ort.Float, ptrOf(in8), len(in8))
+		if err != nil {
+			return nil, err
+		}
+		inputNames = append(inputNames, "in8x")
+		tensors = append(tensors, zt)
 	}
 	outs, err := r.sess.Run(inputNames, tensors, []string{r.outputName()})
 	if err != nil {
 		return nil, err
 	}
 	defer outs[0].Destroy()
-	// 输出 [1, th, tw, 24]，读为 24 通道原始数据。
-	n := tw * th * 24
+	// 输出 [1, th, tw, frames*3]：Apollo 24 通道(8帧)，Aion 48 通道(16帧)。
+	n := tw * th * m.OutFrames * 3
 	vals, err := readTensorFloats(outs[0], n, r.outputType())
 	if err != nil {
 		return nil, err
@@ -252,12 +383,22 @@ func readTensorFloats(t *ort.Tensor, n, elemType int) ([]float32, error) {
 	return out, nil
 }
 
-// ExtractSubFrame 从插帧原始输出 [H, W, 24] 中提取第 k 个子帧（k=0..7）。
+// ExtractSubFrame 从插帧原始输出 [H, W, frames*3] 中提取第 k 个子帧。
+// 帧数由数据长度推断（Apollo 8 帧 / Aion 16 帧）。
 func ExtractSubFrame(raw *Frame, k int) *Frame {
+	perFrame := raw.W * raw.H * 3
+	frames := len(raw.Data) / perFrame
+	if frames <= 0 {
+		frames = 1
+	}
+	if k >= frames {
+		k = frames - 1
+	}
+	stride := frames * 3
 	out := NewFrame(raw.W, raw.H)
 	for j := 0; j < raw.H; j++ {
 		for i := 0; i < raw.W; i++ {
-			si := (j*raw.W+i)*24 + k*3
+			si := (j*raw.W+i)*stride + k*3
 			di := (j*raw.W + i) * 3
 			out.Data[di] = raw.Data[si]
 			out.Data[di+1] = raw.Data[si+1]
