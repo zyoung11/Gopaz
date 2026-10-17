@@ -64,6 +64,9 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 - `--factor`：慢放倍数 `2 3 4 6 8 10 12 16`
 - `--sensitivity 10`：重复帧替换灵敏度 0-100；`rdt = sensitivity/1000`，0 关闭
 - `--rdt -1`：原始 rdt 覆盖；-1 表示使用 `--sensitivity` 的映射
+- `--instances 1`：插值总会话数；Aion 默认单会话
+- `--gpu-vram 0`：Aion tile 预算 GB；0=自动检测后按 4GB 上限选块，传设备显存可按 Topaz 公式
+- `--vram 0`：每会话显存上限 GB；0=自动
 
 重复帧替换的行为与 Topaz `tvai_fi` 一致：相邻源帧差异低于 `rdt` 时，不复制该重复帧，
 而是在前后两个非重复帧之间生成新的插值帧替换它；输出帧数/FPS 保持不变。
@@ -91,7 +94,8 @@ Apollo 与 Aion 都支持该行为。
 --instances 1     # 插值总会话数（本工具语义；Topaz 的 instances 是额外实例数）
 --sensitivity 10  # 重复帧替换灵敏度 0-100（rdt=sensitivity/1000，0 关闭）
 --rdt -1          # 原始 rdt 覆盖（-1=使用 --sensitivity）
---vram 2          # 每会话显存上限 GB（本工具语义；Topaz 的 vram 是显存比例 0.1-1）
+--gpu-vram 0      # Aion tile 预算 GB（0=自动 4GB 上限；传设备显存按 Topaz 公式）
+--vram 0          # 每会话显存上限 GB（0=自动；Topaz 的 vram 是显存比例 0.1-1）
 --overlap 0       # 分块重叠，0=自动（增强/插帧 48，Aion 32）
 --kcolor 1        # keepColor 色彩校正 0/1
 --scene-threshold 6.5  # 场景切换阈值
@@ -137,6 +141,7 @@ TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE
   默认重叠为 48（Aion 32）。
 - **keepColor**：当模型 `keepColor=1` 且 `--kcolor 1` 时，在输出帧上做 Lab 均值/方差匹配到输入帧（Reinhard 色彩迁移）；Proteus/Gaia 启用。
 - **重复帧替换**：`--sensitivity` 映射到 `rdt`；相邻重复帧不复制，而是在前后非重复帧之间生成插值帧替换，保持输出帧数/FPS。
+- **Aion 动态 tile**：按 Topaz 的 `maxProcPixels` 公式从 `baseGB=1.2`、`pixelsPerGB=120000` 计算；默认自动检测显存但把 tile 预算限制为 4GB（4K 下 608×576），实测比 Topaz 设备显存公式的 1632×1632 更快；`--gpu-vram` 可覆盖。
 - **场景切换**：`scene_change_threshold` 传入 6.5；模型内部用 fnet 光流幅度做软混合，外部不再按像素差重置 `hr_prev`。
 - **三阶段流水线**：解码在独立 goroutine 中预读，编码在独立 goroutine 中完成 RGB24 转换和 ffmpeg 写入；通过有界 channel 与推理并行。
 
@@ -145,7 +150,7 @@ TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE
 - 插帧模型在部分 Blackwell GPU 上曾有 CUDA 兼容问题（fp16 ReduceMean 溢出），已通过 ONNX 补丁解决；若仍异常可 `--gpu -1` 退回 CPU（正确但慢）。
 - **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），每帧 4K 约数十秒。三阶段流水线已经实现，但单帧内的 tile 提取、融合和色彩校正仍串行，GPU 仍可能等待 CPU。
 - `rdt` / `sensitivity` 与 `instances` 已实现；同帧内的 tile 处理仍串行。
-- Aion 按训练尺寸（32 的倍数）分块推理，实测小 tile 比大 tile 更快。
+- Aion 动态 tile 默认 4GB 预算；实测 4K 下 608×576 比 1632×1632 快约 11%，320×320 与 1632×1632 接近；`--gpu-vram` 可强制其他预算。
 - 重复帧替换的输出帧数/FPS 保持不变；Topaz 的实现在部分边界会少 1-3 帧，本工具不模拟该细节。
 - keepColor 是 Lab 均值/方差匹配的近似实现，与 Topaz 的像素差异约在 1 个 8bit 色阶量级。
 - 非 2 幂倍数（3/6/10/12）的时间位置为最近子帧近似。

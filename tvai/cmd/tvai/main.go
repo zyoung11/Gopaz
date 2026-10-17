@@ -71,8 +71,9 @@ func usage() {
   --overlap 分块重叠，0=自动 (增强/插帧 48, Aion 32)
   --kcolor  keepColor 色彩校正 0/1 (默认 1)
   --scene-threshold 场景切换阈值 (默认 6.5)
-  --vram    每会话显存上限 GB (本工具语义，Topaz 的 vram 是显存比例)
-  --instances 插值总会话数 (本工具语义，Topaz 的 instances 是额外实例数)
+  --instances 1 插值总会话数 (本工具语义，Topaz 的 instances 是额外实例数)
+  --gpu-vram 0  Aion tile 预算 GB (0=自动 4GB 上限；传设备显存按 Topaz 公式)
+  --vram    每会话显存上限 GB (0=自动)
   --start --end  处理帧范围
   --ffmpeg --ffprobe  可执行文件路径 (默认从 PATH 或 Topaz 目录)`)
 }
@@ -150,10 +151,11 @@ func cmdInterpolate(args []string) error {
 	out := fs.String("o", "", "输出视频")
 	mk := fs.String("model", "apollo", "模型")
 	factor := fs.Int("factor", 2, "慢放倍数")
-	instances := fs.Int("instances", 3, "插值并发实例数")
+	instances := fs.Int("instances", 1, "插值总会话数")
 	rdt := fs.Float64("rdt", -1, "原始去重阈值，-1=使用 --sensitivity")
 	sensitivity := fs.Int("sensitivity", 10, "重复帧替换灵敏度 0-100，0 关闭")
-	vram := fs.Float64("vram", 0, "每会话显存上限 GB，默认 2")
+	gpuVRAM := fs.Float64("gpu-vram", 0, "Aion 动态 tile 使用的总显存 GB，0=自动检测")
+	vram := fs.Float64("vram", 0, "每会话显存上限 GB，0=自动")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
 	threads := fs.Int("threads", 0, "线程数")
 	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
@@ -185,7 +187,7 @@ func cmdInterpolate(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
 		GPU: *gpu, Threads: *threads, Overlap: *overlap, WorkDir: *work,
-		Instances: *instances, RDT: *rdt, Sensitivity: *sensitivity, VramGB: *vram,
+		Instances: *instances, RDT: *rdt, Sensitivity: *sensitivity, VramGB: *vram, DeviceVRAMGB: *gpuVRAM,
 		StartFrame: *start, EndFrame: *end,
 		Encode:    encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
 		AudioMode: *audioCodec, AudioBitrate: *audioBitrate,

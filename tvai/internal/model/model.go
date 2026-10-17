@@ -43,6 +43,9 @@ type Model struct {
 	KeepColor bool
 	// 模型 JSON 的 blockOverlap；0 表示使用默认 48。
 	BlockOverlap int
+	// 动态尺寸模型的显存预算参数，对应 JSON baseGB/pixelsPerGB。
+	BaseGB      float64
+	PixelsPerGB float64
 	// 文件名前缀，用于拼接 <prefix>-fp16-<H>x<W>[-<S>x]-ox.tz
 	FilePrefix string
 	// 是否在文件名中含 scale 段（增强模型含，插帧模型不含）
@@ -122,6 +125,7 @@ func Registry() map[string]*Model {
 			Display: "Aion", Scales: nil, TileHW: interpTiles,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
 			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz", BlockOverlap: 32,
+			BaseGB: 1.2, PixelsPerGB: 120000,
 		},
 	}
 }

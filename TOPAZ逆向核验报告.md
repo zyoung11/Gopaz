@@ -505,6 +505,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 | 帧范围 | 统一解析 `--start/--end` 并裁剪总帧数；upscale 与 interpolate 的输出长度与范围一致 |
 | E2E 回归 | `internal/pipeline/e2e_test.go`：Proteus 帧范围/分块、Apollo 重复帧替换；Aion 需 `TVAI_E2E_AION=1` 和 GPU；默认跳过 |
 | 流水线重叠 | 解码、推理、编码三阶段通过有界 channel 并行；编码 goroutine 负责 RGB24 转换和 ffmpeg 写入 |
+| Aion 动态 tile | 按 Topaz 的 baseGB/pixelsPerGB 计算；默认 auto 检测显存后限制 4GB 预算，`--gpu-vram` 覆盖 |
 | 稳定性 | 修复 Apollo tile 批处理固定 batch=1 的维度错误；修复 `Probe` 缺 `nb_frames` 的帧数兜底；修复 `parallelRows` 行数不整除时等待挂起 |
 | 文档/测试 | README 更新；新增选块、Lab 色彩迁移、模型块表的单元测试 |
 
@@ -516,12 +517,13 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 - 选块实测与代码一致：proteus 720p→672x384、1080p/4K→672x576；apo 1080p→1056x1088、4K→1344x1152。
 - 重复帧替换实测：30 帧含 15 组重复的测试片，Apollo slowmo=2 输出 59 帧并替换 28 帧（Sensitivity 100）；Aion 输出 59 帧并替换 14 帧（Sensitivity 10）。
 - 帧范围实测：20 帧源片，upscale 在 5-9、仅 start 5、仅 end 4、18-25 越界、25-30 无效五种情况下输出 5/15/5/2/报错 帧；interpolate 输出 9/29/9/3/报错 帧。
-- E2E 回归：Proteus 4 个范围/倍率用例通过；Apollo 重复帧输出 15 帧且第 1 帧替换差异 6.06；Aion 输出 15 帧且差异 5.00（GPU）。
+- E2E 回归：Proteus 4 个范围/倍率用例通过；Apollo 重复帧输出 15 帧且第 1 帧替换差异 6.06；Aion 输出 15 帧且差异 5.14（GPU，动态 tile 320）。
+- Aion 4K 2 帧 2x 基准：Topaz 公式 1632×1632 总 62.2s/推理 13.2s；320×320 59.5s/11.3s；608×576 55.5s/8.5s；默认改为 4GB 预算（608×576），实测总 55.7s/推理 8.4s。
 
 未纳入本次改动：
 
 - Nyx/NxF/Iris/Rhea 不在工具范围内（逆向结论保留在 §2–§4）。
-- 单帧内的 tile 提取/融合/色彩校正仍串行，GPU 仍可能等待 CPU；Aion 的 Topaz 动态大 tile 策略未改。
+- 单帧内的 tile 提取/融合/色彩校正仍串行，GPU 仍可能等待 CPU；Aion 动态 tile 默认 4GB 预算，完整 Topaz 设备显存公式需显式 `--gpu-vram`。
 - 重复帧替换保留输出帧数/FPS；Topaz 的实现在部分边界会少 1-3 帧，本工具不模拟该细节。
 
 
@@ -532,7 +534,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 - [x] 修复 `upscale --start/--end` 的帧范围与输出长度
 - [x] 端到端回归测试：Apollo/Aion 重复帧、Proteus 分块、帧范围
 - [x] 流水线重叠：解码、推理、编码三阶段
-- [ ] Aion 动态 tile 与 Topaz 性能对齐
+- [x] Aion 动态 tile 与 Topaz 性能对齐
 - [ ] 重复帧替换与 Topaz 的像素级对比
 - [ ] 10bit/YUV 色彩管线与 keepColor 精确实现
 - [ ] 子帧顺序与时间戳验证

@@ -30,7 +30,8 @@ type UpscaleConfig struct {
 	GPU            int                // -2 自动 / -1 CPU / 0+ 设备号
 	Threads        int
 	Instances      int     // 插值并发实例数（会话池大小）
-	VramGB         float64 // 每会话显存上限(GB)，0=默认2GB
+	VramGB         float64 // 每会话显存上限(GB)，0=自动
+	DeviceVRAMGB   float64 // 动态模型使用的总显存(GB)，0=自动检测
 	WorkDir        string  // 临时解包目录
 }
 
@@ -97,6 +98,28 @@ func (r *Runner) BatchLimit() int {
 // LoadRunner 解包并加载模型，读取 IO 元数据。
 func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	m := cfg.Model
+	detectedVRAM := 0.0
+	if m.PixelsPerGB > 0 && cfg.GPU != -1 {
+		detectedVRAM = detectVRAMGB(cfg.GPU)
+	}
+	tileVRAM := cfg.DeviceVRAMGB
+	if tileVRAM <= 0 {
+		tileVRAM = detectedVRAM
+		if tileVRAM > defaultAionTileBudget {
+			tileVRAM = defaultAionTileBudget
+		}
+	}
+	sessionVRAM := detectedVRAM
+	if sessionVRAM <= 0 {
+		sessionVRAM = cfg.DeviceVRAMGB
+	}
+	nInst := cfg.Instances
+	if nInst <= 0 {
+		nInst = 2
+	}
+	if nInst > 6 {
+		nInst = 6
+	}
 	overlap := cfg.Overlap
 	if overlap <= 0 {
 		overlap = m.BlockOverlapOrDefault()
@@ -104,7 +127,12 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	candidates := m.TileHW
 	var tw, th int
 	if m.SingleFile != "" {
-		tw, th = chooseTileMax(candidates, cfg.FW, cfg.FH)
+		if m.PixelsPerGB > 0 && tileVRAM > 0 {
+			tw, th = chooseDynamicTile(m.BaseGB, m.PixelsPerGB, tileVRAM, cfg.FW, cfg.FH)
+		}
+		if tw <= 0 || th <= 0 {
+			tw, th = chooseTileMax(candidates, cfg.FW, cfg.FH)
+		}
 	} else {
 		tw, th = chooseTile(candidates, cfg.FW, cfg.FH, overlap, TilePenalty)
 	}
@@ -142,6 +170,15 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	so.CUDA = cfg.GPU != -1
 	if cfg.VramGB > 0 {
 		so.GPUMemLimit = uint64(cfg.VramGB * 1024 * 1024 * 1024)
+	} else if m.PixelsPerGB > 0 && sessionVRAM > 0 {
+		autoGB := sessionVRAM - m.BaseGB
+		if autoGB < 0.1 {
+			autoGB = 0.1
+		}
+		if nInst > 1 {
+			autoGB /= float64(nInst)
+		}
+		so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
 	}
 	if cfg.GPU >= 0 {
 		so.CUDADeviceID = cfg.GPU
@@ -152,13 +189,6 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	env, err := ort.NewEnv()
 	if err != nil {
 		return nil, err
-	}
-	nInst := cfg.Instances
-	if nInst <= 0 {
-		nInst = 2
-	}
-	if nInst > 6 {
-		nInst = 6
 	}
 	sess, err := ort.NewSession(env, onnxPath, so)
 	if err != nil {

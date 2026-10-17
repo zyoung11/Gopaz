@@ -132,7 +132,7 @@ func e2eInterpolate(t *testing.T, env e2eEnv, src, out, key string, sensitivity,
 	job := InterpJob{
 		Input: src, Output: out, Ffmpeg: env.ffmpeg, Ffprobe: env.ffprobe,
 		ModelDir: env.modelDir, Model: m, Factor: 2,
-		RDT: -1, Sensitivity: sensitivity, Instances: 1, VramGB: 0,
+		RDT: -1, Sensitivity: sensitivity, Instances: 1, VramGB: 2, DeviceVRAMGB: 2,
 		GPU: env.gpu, Threads: 4, Overlap: 0, WorkDir: t.TempDir(),
 		StartFrame: start, EndFrame: end,
 		Encode:    encode.Options{EncoderID: "ffv1-10bit-420", RateControl: "cq", Quality: "High"},

@@ -25,6 +25,7 @@ type InterpJob struct {
 	Sensitivity          int     // Topaz Sensitivity 0-100，rdt=Sensitivity/1000
 	Instances            int     // 并发实例数
 	VramGB               float64 // 每会话显存上限(GB)
+	DeviceVRAMGB         float64 // 动态模型使用的总显存(GB)，0=自动检测
 	GPU                  int
 	Threads              int
 	Overlap              int
@@ -74,7 +75,7 @@ func RunInterpolate(job InterpJob) error {
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
 		FW: fw, FH: fh, Params: map[string]float64{}, Overlap: job.Overlap, Instances: job.Instances, VramGB: job.VramGB,
-		GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
+		DeviceVRAMGB: job.DeviceVRAMGB, GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {
