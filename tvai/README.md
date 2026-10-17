@@ -99,6 +99,24 @@ Apollo 与 Aion 都支持该行为。
 --workdir <dir>   # 临时 ONNX 解包目录
 ```
 
+## 测试
+
+```bash
+go test ./...
+```
+
+端到端回归默认跳过，需要模型目录和 onnxruntime：
+
+```bash
+TVAI_E2E=1 go test ./internal/pipeline -run E2E -v
+TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE2EAionDuplicate -v
+```
+
+- `TVAI_E2E=1` 运行 Proteus 帧范围/分块和 Apollo 重复帧替换
+- `TVAI_E2E_GPU=1` 使用 GPU 0，否则走 CPU
+- `TVAI_E2E_AION=1` 额外运行 Aion 重复帧替换，需要 GPU
+- 缺少 ffmpeg/ffprobe、模型或 ORT 时测试自动 skip
+
 ## 环境变量
 
 | 变量 | 说明 |

@@ -503,6 +503,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 | 模型范围 | 仅保留 Proteus / Gaia / Apollo / Aion；Nyx/NxF/Iris/Rhea 不实现 |
 | 重复帧替换 | Apollo/Aion 新增真正的 Replace：检测相邻重复帧后用前后非重复帧生成插值帧替换，输出帧数/FPS 不变；`--sensitivity` 0-100 映射 rdt，`--rdt` 原始覆盖 |
 | 帧范围 | 统一解析 `--start/--end` 并裁剪总帧数；upscale 与 interpolate 的输出长度与范围一致 |
+| E2E 回归 | `internal/pipeline/e2e_test.go`：Proteus 帧范围/分块、Apollo 重复帧替换；Aion 需 `TVAI_E2E_AION=1` 和 GPU；默认跳过 |
 | 稳定性 | 修复 Apollo tile 批处理固定 batch=1 的维度错误；修复 `Probe` 缺 `nb_frames` 的帧数兜底；修复 `parallelRows` 行数不整除时等待挂起 |
 | 文档/测试 | README 更新；新增选块、Lab 色彩迁移、模型块表的单元测试 |
 
@@ -514,6 +515,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 - 选块实测与代码一致：proteus 720p→672x384、1080p/4K→672x576；apo 1080p→1056x1088、4K→1344x1152。
 - 重复帧替换实测：30 帧含 15 组重复的测试片，Apollo slowmo=2 输出 59 帧并替换 28 帧（Sensitivity 100）；Aion 输出 59 帧并替换 14 帧（Sensitivity 10）。
 - 帧范围实测：20 帧源片，upscale 在 5-9、仅 start 5、仅 end 4、18-25 越界、25-30 无效五种情况下输出 5/15/5/2/报错 帧；interpolate 输出 9/29/9/3/报错 帧。
+- E2E 回归：Proteus 4 个范围/倍率用例通过；Apollo 重复帧输出 15 帧且第 1 帧替换差异 6.06；Aion 输出 15 帧且差异 5.00（GPU）。
 
 未纳入本次改动：
 
@@ -527,7 +529,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 ## 9. TODO
 
 - [x] 修复 `upscale --start/--end` 的帧范围与输出长度
-- [ ] 端到端回归测试：Apollo/Aion 重复帧、Proteus 分块、帧范围
+- [x] 端到端回归测试：Apollo/Aion 重复帧、Proteus 分块、帧范围
 - [ ] 流水线重叠：解码、推理、编码三阶段
 - [ ] Aion 动态 tile 与 Topaz 性能对齐
 - [ ] 重复帧替换与 Topaz 的像素级对比
