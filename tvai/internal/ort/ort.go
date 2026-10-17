@@ -301,21 +301,6 @@ func (t *Tensor) Data() unsafe.Pointer {
 	return unsafe.Pointer(dp)
 }
 
-// Dims 返回张量实际形状。
-func (t *Tensor) Dims() []int64 {
-	var ti uintptr
-	if check(call(ortIdxGetTensorTypeAndShape, t.ptr, uintptr(unsafe.Pointer(&ti))), "GetTensorTypeAndShape") != nil {
-		return nil
-	}
-	defer call(ortIdxReleaseTypeInfo, ti)
-	var nd uintptr
-	call(ortIdxGetDimensionsCount, ti, uintptr(unsafe.Pointer(&nd)))
-	d := make([]int64, nd)
-	if nd > 0 {
-		call(ortIdxGetDimensions, ti, uintptr(unsafe.Pointer(&d[0])), nd)
-	}
-	return d
-}
 
 // Destroy 释放张量。
 func (t *Tensor) Destroy() {

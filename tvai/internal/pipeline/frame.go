@@ -2,7 +2,6 @@
 package pipeline
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -98,23 +97,6 @@ func MergeTileWeighted(canvas, canvasW, tile, tileW *Frame, ox, oy int) {
 	}
 }
 
-// AddWeight 给权重图的一个矩形区域累加权重。
-func AddWeight(weight *Frame, x, y, w, h int, ramp int) {
-	for j := 0; j < h; j++ {
-		dy := y + j
-		if dy < 0 || dy >= weight.H {
-			continue
-		}
-		for i := 0; i < w; i++ {
-			dx := x + i
-			if dx < 0 || dx >= weight.W {
-				continue
-			}
-			wt := rampWeight(i, j, w, h, ramp)
-			weight.Data[dy*weight.W+dx] += wt
-		}
-	}
-}
 
 // rampWeight 计算一个 tile 内某像素的融合权重：边缘用线性斜坡过渡，内部为 1。
 // ramp 是斜坡宽度（输出空间像素数）。
@@ -260,10 +242,3 @@ func SceneDiff(a, b *Frame) float64 {
 	return sum / float64(n)
 }
 
-// ValidateTileHW 校验 tile 尺寸能被倍率整除关系正确（占位，实际推理按输出尺寸）。
-func ValidateTileHW(th, tw int) error {
-	if th <= 0 || tw <= 0 {
-		return fmt.Errorf("非法 tile 尺寸 %dx%d", th, tw)
-	}
-	return nil
-}

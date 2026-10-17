@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -66,8 +65,6 @@ func Probe(ffprobe, path string) (*Info, error) {
 type Decoder struct {
 	cmd    *exec.Cmd
 	stdout *bufio.Reader
-	Width  int
-	Height int
 }
 
 // NewDecoder 启动 ffmpeg 解码，输出 rawvideo rgb24 到 stdout 管道。
@@ -94,7 +91,7 @@ func NewDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int) (*Decod
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动 ffmpeg 解码失败: %w", err)
 	}
-	return &Decoder{cmd: cmd, stdout: bufio.NewReaderSize(stdout, 1<<20), Width: w, Height: h}, nil
+	return &Decoder{cmd: cmd, stdout: bufio.NewReaderSize(stdout, 1<<20)}, nil
 }
 
 // ReadFrame 读出一帧到 buf（长度需 >= w*h*3）。到达末尾返回 io.EOF。
@@ -119,8 +116,6 @@ type Encoder struct {
 	cmd    *exec.Cmd
 	stdin  io.WriteCloser
 	stderr *bytes.Buffer
-	Width  int
-	Height int
 }
 
 // NewEncoder 启动 ffmpeg 编码，从 stdin 读 rawvideo rgb24。
@@ -142,7 +137,7 @@ func NewEncoder(ffmpeg, outPath string, w, h int, fps float64, extra []string) (
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("启动 ffmpeg 编码失败: %w", err)
 	}
-	return &Encoder{cmd: cmd, stdin: stdin, stderr: &se, Width: w, Height: h}, nil
+	return &Encoder{cmd: cmd, stdin: stdin, stderr: &se}, nil
 }
 
 // WriteFrame 写入一帧。
@@ -218,10 +213,3 @@ func trimSpace(s string) string {
 	return s[i:j]
 }
 
-// EnsureFfmpeg 校验 ffmpeg 可执行文件存在。
-func EnsureFfmpeg(path string) error {
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("找不到 ffmpeg: %s", path)
-	}
-	return nil
-}

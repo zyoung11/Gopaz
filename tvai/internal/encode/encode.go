@@ -16,8 +16,6 @@ type Encoder struct {
 	CQP         map[string]int // 质量档位 (High/Mid/Low) -> constqp 值
 	HasCQP      bool       // 是否支持 constqp (CQ) 模式
 	RateControl bool       // 是否支持 cbr/vbr 码率控制
-	MaxBitDepth int        // 最大位深（0=不限）
-	MaxSize     [2]int     // 最大宽高（0=不限）
 }
 
 // Registry 返回全部编码器，按 ID 索引。
@@ -28,48 +26,48 @@ func Registry() map[string]*Encoder {
 			Base: strings.Fields("-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 18, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
-			MaxBitDepth: 8, MaxSize: [2]int{4096, 4096},
+			
 		},
 		"h265-main-win-nvidia": {
 			ID: "h265-main-win-nvidia", Desc: "H.265 Main, NVENC, 8bit",
 			Base: strings.Fields("-c:v hevc_nvenc -profile:v main -pix_fmt yuv420p -b_ref_mode disabled -tag:v hvc1 -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
-			MaxBitDepth: 8, MaxSize: [2]int{8192, 8192},
+			
 		},
 		"h265-main10-win-nvidia": {
 			ID: "h265-main10-win-nvidia", Desc: "H.265 Main10, NVENC, 10bit",
 			Base: strings.Fields("-c:v hevc_nvenc -profile:v main10 -pix_fmt p010le -b_ref_mode disabled -tag:v hvc1 -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
-			MaxBitDepth: 12, MaxSize: [2]int{8192, 8192},
+			
 		},
 		"av1-win-nvidia": {
 			ID: "av1-win-nvidia", Desc: "AV1, NVENC, 8bit",
 			Base: strings.Fields("-c:v av1_nvenc -preset p6 -tile-columns 2 -tile-rows 2 -pix_fmt yuv420p"),
 			Extensions: []string{"mkv", "webm", "mp4"}, HasCQP: false, RateControl: true,
-			MaxBitDepth: 8, MaxSize: [2]int{16384, 8704},
+			
 		},
 		"av1-10bit-win-nvidia": {
 			ID: "av1-10bit-win-nvidia", Desc: "AV1, NVENC, 10bit",
 			Base: strings.Fields("-c:v av1_nvenc -preset p6 -tile-columns 2 -tile-rows 2 -pix_fmt p010le"),
 			Extensions: []string{"mkv", "webm", "mp4"}, HasCQP: false, RateControl: true,
-			MaxBitDepth: 12, MaxSize: [2]int{16384, 8704},
+			
 		},
 		"prores-422-hq-win": {
 			ID: "prores-422-hq-win", Desc: "ProRes 422 HQ, 10bit, mov",
 			Base: strings.Fields("-c:v prores_ks -profile:v 3 -vendor apl0 -quant_mat hq -bits_per_mb 1350 -pix_fmt yuv422p10le"),
-			Extensions: []string{"mov"}, MaxBitDepth: 10,
+			Extensions: []string{"mov"},
 		},
 		"prores-422-std-win": {
 			ID: "prores-422-std-win", Desc: "ProRes 422, 10bit, mov",
 			Base: strings.Fields("-c:v prores_ks -profile:v 2 -vendor apl0 -quant_mat hq -bits_per_mb 1350 -pix_fmt yuv422p10le"),
-			Extensions: []string{"mov"}, MaxBitDepth: 10,
+			Extensions: []string{"mov"},
 		},
 		"prores-422-lt-win": {
 			ID: "prores-422-lt-win", Desc: "ProRes 422 LT, 10bit, mov",
 			Base: strings.Fields("-c:v prores_ks -profile:v 1 -vendor apl0 -quant_mat lt -bits_per_mb 525 -pix_fmt yuv422p10le"),
-			Extensions: []string{"mov"}, MaxBitDepth: 10,
+			Extensions: []string{"mov"},
 		},
 		"ffv1-10bit-444": {
 			ID: "ffv1-10bit-444", Desc: "FFV1 无损, 10bit 4:4:4",

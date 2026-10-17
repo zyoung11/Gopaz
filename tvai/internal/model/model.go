@@ -36,7 +36,6 @@ type Model struct {
 	Scales   []int  // 支持的放大倍率；插帧模型为空
 	TileHW   [][2]int // 可用 tile 尺寸 (H,W)
 	Params   []Param // 可调参数（按张量顺序）
-	FileName string  // 构造 .tz 文件名的模板占位说明（仅文档用）
 	// 文件名前缀，用于拼接 <prefix>-fp16-<H>x<W>[-<S>x]-ox.tz
 	FilePrefix string
 	// 是否在文件名中含 scale 段（增强模型含，插帧模型不含）
@@ -51,8 +50,6 @@ type Model struct {
 	OutFrames int
 	// 插帧：两级结构时的底部模型文件（如 Aion 需先用 aiob 产 8 帧作 in8x）
 	BottomFile string
-	// 插帧：主帧是输入中的哪两个（in1,in2）
-	UsesIn0In3 bool
 }
 
 // Pro Params 是 Proteus 的 6 维参数（张量顺序 preBlur,noise,details,halo,blur,compression）。
@@ -110,13 +107,13 @@ func Registry() map[string]*Model {
 			Key: "apollo", Short: "apo", Version: "8", Kind: KindInterp,
 			Display: "Apollo", Scales: nil, TileHW: apolloTiles,
 			Params: nil, FilePrefix: "apo-v8", FileHasScale: false,
-			OutFrames: 8, UsesIn0In3: true,
+			OutFrames: 8,
 		},
 		"aion": {
 			Key: "aion", Short: "aion", Version: "1", Kind: KindInterp,
 			Display: "Aion", Scales: nil, TileHW: interpTiles,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
-			OutFrames: 16, UsesIn0In3: true, BottomFile: "aiob-v1-fp16-ox.tz",
+			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz",
 		},
 	}
 }

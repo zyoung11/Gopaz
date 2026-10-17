@@ -20,7 +20,6 @@ type UpscaleJob struct {
 	Scale    int
 	Params   map[string]float64
 	GPU      int
-	VRAM     float64
 	Threads  int
 	Overlap  int
 	WorkDir  string
@@ -50,7 +49,7 @@ func RunUpscale(job UpscaleJob) error {
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
 		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
-		GPU: job.GPU, VRAM: job.VRAM, Threads: job.Threads, WorkDir: job.WorkDir,
+		GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {

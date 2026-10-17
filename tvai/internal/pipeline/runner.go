@@ -22,7 +22,6 @@ type UpscaleConfig struct {
 	Params     map[string]float64 // GUI 空间参数（0-100 或 -100-100）
 	Overlap    int    // 分块重叠（输入空间）
 	GPU        int    // -2 自动 / -1 CPU / 0+ 设备号
-	VRAM       float64
 	Threads    int
 	WorkDir    string // 临时解包目录
 }
@@ -103,20 +102,6 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 	if cfg.Threads > 0 {
 		so.IntraOpThreads = cfg.Threads
-	}
-	// TVAI_GRAPH_OPT 可覆盖图优化等级（0=关闭, 99=全部）。
-	if v := os.Getenv("TVAI_GRAPH_OPT"); v != "" {
-		var g int
-		if _, err := fmt.Sscanf(v, "%d", &g); err == nil {
-			so.GraphOptLevel = g
-		}
-	}
-	// TVAI_CUDNN_ALGO 可覆盖 cuDNN conv 算法搜索策略（0/1/2）。
-	if v := os.Getenv("TVAI_CUDNN_ALGO"); v != "" {
-		var a int
-		if _, err := fmt.Sscanf(v, "%d", &a); err == nil && a >= 0 && a <= 2 {
-			so.CUDNNAlgo = a
-		}
 	}
 	env, err := ort.NewEnv()
 	if err != nil {
@@ -564,9 +549,3 @@ func tensorToFrameTyped(t *ort.Tensor, w, h int, elemType int) (*Frame, error) {
 	return f, nil
 }
 
-// LogTile 输出 tile 信息。
-func (r *Runner) LogTile() {
-	th, tw := r.tileH, r.tileW
-	log.Infof("tile %dx%d, scale %dx, params %v", th, tw, r.cfg.Scale, r.paramVec)
-	_ = math.Max
-}

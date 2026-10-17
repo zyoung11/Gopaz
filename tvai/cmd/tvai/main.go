@@ -210,24 +210,10 @@ func cmdModels() {
 
 func cmdEncoders() {
 	fmt.Println("视频编码器 (encoder id → 说明):")
-	for _, e := range encodersList() {
+	reg := encode.Registry()
+	for _, id := range encode.SortedIDs() {
+		e := reg[id]
 		fmt.Printf("  %-26s %s\n", e.ID, e.Desc)
-	}
-}
-
-type encoderInfo struct{ ID, Desc string }
-
-func encodersList() []encoderInfo {
-	return []encoderInfo{
-		{"h264-main-win-nvidia", "H.264 High, NVENC, 8bit, ≤4096x4096"},
-		{"h265-main-win-nvidia", "H.265 Main, NVENC, 8bit, ≤8192x8192"},
-		{"h265-main10-win-nvidia", "H.265 Main10, NVENC, 10bit, ≤8192x8192"},
-		{"av1-win-nvidia", "AV1, NVENC, 8bit"},
-		{"av1-10bit-win-nvidia", "AV1, NVENC, 10bit"},
-		{"prores-422-hq-win", "ProRes 422 HQ, 10bit, mov"},
-		{"prores-422-std-win", "ProRes 422, 10bit, mov"},
-		{"ffv1-10bit-444", "FFV1 无损, 10bit 4:4:4"},
-		{"vp9-best", "VP9 best, 软编"},
 	}
 }
 
