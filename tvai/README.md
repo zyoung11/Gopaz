@@ -138,12 +138,13 @@ TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE
 - **keepColor**：当模型 `keepColor=1` 且 `--kcolor 1` 时，在输出帧上做 Lab 均值/方差匹配到输入帧（Reinhard 色彩迁移）；Proteus/Gaia 启用。
 - **重复帧替换**：`--sensitivity` 映射到 `rdt`；相邻重复帧不复制，而是在前后非重复帧之间生成插值帧替换，保持输出帧数/FPS。
 - **场景切换**：`scene_change_threshold` 传入 6.5；模型内部用 fnet 光流幅度做软混合，外部不再按像素差重置 `hr_prev`。
+- **三阶段流水线**：解码在独立 goroutine 中预读，编码在独立 goroutine 中完成 RGB24 转换和 ffmpeg 写入；通过有界 channel 与推理并行。
 
 ## 已知限制
 
 - 插帧模型在部分 Blackwell GPU 上曾有 CUDA 兼容问题（fp16 ReduceMean 溢出），已通过 ONNX 补丁解决；若仍异常可 `--gpu -1` 退回 CPU（正确但慢）。
-- **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），每帧 4K 约数十秒。当前实现 GPU 占用在 0-100% 间横跳（未做流水线重叠，GPU 约 40% 时间在空转等 CPU）。Topaz 靠流水线重叠 + TensorRT + Sensitivity 去重跳帧达到稳定 80% GPU，这些尚未复刻，见调查文档的性能分析。
-- `rdt` / `sensitivity` 与 `instances` 已实现；流水线重叠（解码‖推理‖编码）尚未做，GPU 仍有空转。
+- **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），每帧 4K 约数十秒。三阶段流水线已经实现，但单帧内的 tile 提取、融合和色彩校正仍串行，GPU 仍可能等待 CPU。
+- `rdt` / `sensitivity` 与 `instances` 已实现；同帧内的 tile 处理仍串行。
 - Aion 按训练尺寸（32 的倍数）分块推理，实测小 tile 比大 tile 更快。
 - 重复帧替换的输出帧数/FPS 保持不变；Topaz 的实现在部分边界会少 1-3 帧，本工具不模拟该细节。
 - keepColor 是 Lab 均值/方差匹配的近似实现，与 Topaz 的像素差异约在 1 个 8bit 色阶量级。

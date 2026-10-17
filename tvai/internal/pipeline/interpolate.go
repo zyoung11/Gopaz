@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"sync"
@@ -91,6 +90,8 @@ func RunInterpolate(job InterpJob) error {
 		return err
 	}
 	defer dec.Close()
+	reader := startFrameReader(dec, fw, fh, total)
+	defer reader.Stop()
 
 	outFPS := info.FPS * float64(n)
 	encArgs, err := encode.BuildArgs(job.Encode)
@@ -107,7 +108,6 @@ func RunInterpolate(job InterpJob) error {
 	cache := make(map[int]*Frame)
 	nextRead, eofAt := 0, -1
 	var lastF *Frame
-	buf := make([]byte, fw*fh*3)
 	ensure := func(idx int) {
 		if idx > total-1 {
 			idx = total - 1
@@ -118,17 +118,13 @@ func RunInterpolate(job InterpJob) error {
 				nextRead++
 				continue
 			}
-			if err := dec.ReadFrame(buf); err == io.EOF {
+			f, ok := reader.Next()
+			if !ok {
 				eofAt = nextRead
 				cache[nextRead] = lastF
 				nextRead++
 				continue
-			} else if err != nil {
-				cache[nextRead] = lastF
-				nextRead++
-				continue
 			}
-			f := FromRGB24(buf, fw, fh)
 			cache[nextRead] = f
 			lastF = f
 			nextRead++
@@ -142,7 +138,10 @@ func RunInterpolate(job InterpJob) error {
 		if f, ok := cache[idx]; ok && f != nil {
 			return f
 		}
-		return lastF
+		if lastF != nil {
+			return lastF
+		}
+		return NewFrame(fw, fh)
 	}
 
 	overlap := r.Overlap()
@@ -167,25 +166,21 @@ func RunInterpolate(job InterpJob) error {
 			cfg.GPU = -1
 			r, err = LoadRunner(cfg)
 			if err != nil {
+				enc.Close()
 				return err
 			}
 		}
 	}
 	outCount := (total-1)*n + 1
 	frameIdx := 0
-	writeOrig := func(f *Frame) error {
-		if err := enc.WriteFrame(f.ToRGB24()); err != nil {
-			return err
-		}
+	writer := startFrameWriter(enc)
+	writeOrig := func(f *Frame) {
+		writer.Write(f)
 		frameIdx++
-		return nil
 	}
 
 	dupFrames := 0
-	if err := writeOrig(frameAt(0)); err != nil {
-		enc.Close()
-		return err
-	}
+	writeOrig(frameAt(0))
 	for u0 := 0; u0 < total-1; {
 		u1 := u0 + 1
 		if rdt > 0 {
@@ -204,21 +199,16 @@ func RunInterpolate(job InterpJob) error {
 			subIdx := min(max(int(math.Round(t*float64(subdiv)))-1, 0), subdiv-1)
 			interp, err := processInterpFrame(r, window, fw, fh, th, tw, subIdx, overlap)
 			if err != nil {
+				writer.Close()
 				enc.Close()
 				return err
 			}
-			if err := writeOrig(interp); err != nil {
-				enc.Close()
-				return err
-			}
+			writeOrig(interp)
 			if frameIdx%20 == 0 {
 				log.Progress("插帧", frameIdx, outCount)
 			}
 		}
-		if err := writeOrig(frameAt(u1)); err != nil {
-			enc.Close()
-			return err
-		}
+		writeOrig(frameAt(u1))
 		for idx := range cache {
 			if idx < u0 {
 				delete(cache, idx)
@@ -230,6 +220,18 @@ func RunInterpolate(job InterpJob) error {
 		u0 = u1
 	}
 	log.ProgressDone()
+	if err := writer.Close(); err != nil {
+		enc.Close()
+		if se := enc.Stderr(); se != "" {
+			return fmt.Errorf("写入编码器失败: %w; ffmpeg: %s", err, se)
+		}
+		return err
+	}
+	if err := reader.Err(); err != nil {
+		enc.Close()
+		os.Remove(tmpVideo)
+		return fmt.Errorf("解码失败: %w", err)
+	}
 	wall := time.Since(startAll).Seconds()
 	log.Infof("耗时分解: 总 %.1fs, 模型推理 %.1fs (%.0f%%), 其余 %.1fs", wall, float64(r.inferNanos)/1e9, float64(r.inferNanos)/1e9/wall*100, wall-float64(r.inferNanos)/1e9)
 	if dupFrames > 0 {

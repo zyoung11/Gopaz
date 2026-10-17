@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	"tvai/internal/encode"
@@ -99,6 +98,9 @@ func RunUpscale(job UpscaleJob) error {
 	if err != nil {
 		return err
 	}
+	reader := startFrameReader(dec, fw, fh, total)
+	defer reader.Stop()
+	writer := startFrameWriter(enc)
 
 	// 带前瞻的环形缓冲时序窗口。
 	center := job.Model.CenterIdx
@@ -111,7 +113,6 @@ func RunUpscale(job UpscaleJob) error {
 	readPos, emitPos := 0, 0
 
 	frameIdx := 0
-	buf := make([]byte, fw*fh*3)
 	overlap := r.Overlap()
 	needTemporal := r.HasInput("hr_prev")
 
@@ -119,12 +120,10 @@ func RunUpscale(job UpscaleJob) error {
 		if total > 0 && readPos >= total {
 			return false
 		}
-		if err := dec.ReadFrame(buf); err == io.EOF {
-			return false
-		} else if err != nil {
+		f, ok := reader.Next()
+		if !ok {
 			return false
 		}
-		f := FromRGB24(buf, fw, fh)
 		if so > 1 {
 			ring[readPos%so] = f
 		} else if so == 1 {
@@ -183,6 +182,7 @@ func RunUpscale(job UpscaleJob) error {
 		}
 		rawFrame, err := processFrame(r, window, fw, fh, th, tw, job.Scale, overlap)
 		if err != nil {
+			writer.Close()
 			enc.Close()
 			return err
 		}
@@ -191,13 +191,7 @@ func RunUpscale(job UpscaleJob) error {
 			outFrame = rawFrame.Clone()
 			ColorTransferLab(centerFrame, outFrame)
 		}
-		if err := enc.WriteFrame(outFrame.ToRGB24()); err != nil {
-			enc.Close()
-			if se := enc.Stderr(); se != "" {
-				return fmt.Errorf("写入编码器失败: %w; ffmpeg: %s", err, se)
-			}
-			return err
-		}
+		writer.Write(outFrame)
 		if needTemporal {
 			r.SetPrevOutput(rawFrame)
 		}
@@ -212,6 +206,18 @@ func RunUpscale(job UpscaleJob) error {
 		}
 	}
 	log.ProgressDone()
+	if err := writer.Close(); err != nil {
+		enc.Close()
+		if se := enc.Stderr(); se != "" {
+			return fmt.Errorf("写入编码器失败: %w; ffmpeg: %s", err, se)
+		}
+		return err
+	}
+	if err := reader.Err(); err != nil {
+		enc.Close()
+		os.Remove(tmpVideo)
+		return fmt.Errorf("解码失败: %w", err)
+	}
 	if err := enc.Close(); err != nil {
 		os.Remove(tmpVideo)
 		return fmt.Errorf("编码收尾失败: %w", err)

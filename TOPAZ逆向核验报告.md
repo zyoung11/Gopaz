@@ -504,6 +504,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 | 重复帧替换 | Apollo/Aion 新增真正的 Replace：检测相邻重复帧后用前后非重复帧生成插值帧替换，输出帧数/FPS 不变；`--sensitivity` 0-100 映射 rdt，`--rdt` 原始覆盖 |
 | 帧范围 | 统一解析 `--start/--end` 并裁剪总帧数；upscale 与 interpolate 的输出长度与范围一致 |
 | E2E 回归 | `internal/pipeline/e2e_test.go`：Proteus 帧范围/分块、Apollo 重复帧替换；Aion 需 `TVAI_E2E_AION=1` 和 GPU；默认跳过 |
+| 流水线重叠 | 解码、推理、编码三阶段通过有界 channel 并行；编码 goroutine 负责 RGB24 转换和 ffmpeg 写入 |
 | 稳定性 | 修复 Apollo tile 批处理固定 batch=1 的维度错误；修复 `Probe` 缺 `nb_frames` 的帧数兜底；修复 `parallelRows` 行数不整除时等待挂起 |
 | 文档/测试 | README 更新；新增选块、Lab 色彩迁移、模型块表的单元测试 |
 
@@ -520,7 +521,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 未纳入本次改动：
 
 - Nyx/NxF/Iris/Rhea 不在工具范围内（逆向结论保留在 §2–§4）。
-- 流水线三阶段重叠、Aion 的 Topaz 动态大 tile 策略未改。
+- 单帧内的 tile 提取/融合/色彩校正仍串行，GPU 仍可能等待 CPU；Aion 的 Topaz 动态大 tile 策略未改。
 - 重复帧替换保留输出帧数/FPS；Topaz 的实现在部分边界会少 1-3 帧，本工具不模拟该细节。
 
 
@@ -530,7 +531,7 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 
 - [x] 修复 `upscale --start/--end` 的帧范围与输出长度
 - [x] 端到端回归测试：Apollo/Aion 重复帧、Proteus 分块、帧范围
-- [ ] 流水线重叠：解码、推理、编码三阶段
+- [x] 流水线重叠：解码、推理、编码三阶段
 - [ ] Aion 动态 tile 与 Topaz 性能对齐
 - [ ] 重复帧替换与 Topaz 的像素级对比
 - [ ] 10bit/YUV 色彩管线与 keepColor 精确实现
