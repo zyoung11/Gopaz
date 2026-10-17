@@ -148,7 +148,7 @@ TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE
 ## 已知限制
 
 - 插帧模型在部分 Blackwell GPU 上曾有 CUDA 兼容问题（fp16 ReduceMean 溢出），已通过 ONNX 补丁解决；若仍异常可 `--gpu -1` 退回 CPU（正确但慢）。
-- **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），每帧 4K 约数十秒。三阶段流水线已经实现，但单帧内的 tile 提取、融合和色彩校正仍串行，GPU 仍可能等待 CPU。
+- **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），4K 8x 实测 Topaz 约 14 分钟，当前约 3.7 小时，慢约 16 倍。主因是每个输出子帧都重跑一次完整推理，而 Aion 单次推理已产出 16 子帧；下一优先优化是单次推理后提取全部子帧。
 - `rdt` / `sensitivity` 与 `instances` 已实现；同帧内的 tile 处理仍串行。
 - Aion 动态 tile 默认 4GB 预算；实测 4K 下 608×576 比 1632×1632 快约 11%，320×320 与 1632×1632 接近；`--gpu-vram` 可强制其他预算。
 - 重复帧替换的输出帧数/FPS 保持不变；Topaz 的实现在部分边界会少 1-3 帧，本工具不模拟该细节。

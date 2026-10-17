@@ -529,12 +529,35 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 
 ---
 
-## 9. TODO
+## 9. Aion 8x 实测（2026-10-17）
+
+输入 `C:/Users/zy/Desktop/test.mov`：3840×2160，30fps，377 帧，12.57s，PCM 48k 双声道。
+配置：Aion，8x，Sensitivity 65，instances 1，默认 4GB tile（576×608）。
+
+| 项 | 结果 |
+|---|---|
+| Topaz 全片 | **14 分钟**，约 3008 输出帧，约 0.28s/输出帧 |
+| tvai 2 源帧 → 9 输出帧 | 总 83.1s，推理 29.5s，其余 53.6s |
+| tvai 8 源帧 → 57 输出帧 | 总 298.9s，推理 199.4s，其余 99.5s |
+| 拟合 | 固定约 45s，每输出帧约 4.5s |
+| 全片估算 | **约 3.7–3.8 小时**，比 Topaz 慢约 **16 倍** |
+
+根因：
+
+1. 每个输出子帧都调用一次完整 tile 推理，而 Aion 单次推理已返回 16 子帧，只用了其中一个；8x 时每个源帧对约 7 次冗余推理。
+2. 每个子帧还重复做 tile 提取、融合和转换。
+3. 流水线重叠、动态 tile、rdt 替换都不是 16 倍差距的主因。
+
+试点输出：`work/aion_pilot_2.mp4`、`work/aion_pilot_8.mp4`。
+
+## 10. TODO
 
 - [x] 修复 `upscale --start/--end` 的帧范围与输出长度
 - [x] 端到端回归测试：Apollo/Aion 重复帧、Proteus 分块、帧范围
 - [x] 流水线重叠：解码、推理、编码三阶段
 - [x] Aion 动态 tile 与 Topaz 性能对齐
+- [x] 实测 Aion 8x 与 Topaz 的耗时对比
+- [ ] 插帧单次推理提取全部子帧
 - [ ] 重复帧替换与 Topaz 的像素级对比
 - [ ] 10bit/YUV 色彩管线与 keepColor 精确实现
 - [ ] 子帧顺序与时间戳验证
