@@ -146,13 +146,14 @@ type SessionOptions struct {
 }
 
 // DefaultSessionOptions 返回默认配置：CUDA 开启，全部图优化。
+// GPUMemLimit 限制单个会话的 CUDA arena 上限（防止无界增长吃满显存）。
 func DefaultSessionOptions() SessionOptions {
 	return SessionOptions{
 		IntraOpThreads:    4,
 		GraphOptLevel:     99,
 		CUDA:              true,
 		CUDADeviceID:      0,
-		GPUMemLimit:       ^uint64(0),
+		GPUMemLimit:       2 * 1024 * 1024 * 1024, // 2GB/会话，防止无界增长吃满显存
 		CopyDefaultStream: true,
 	}
 }

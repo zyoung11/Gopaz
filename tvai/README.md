@@ -74,6 +74,9 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 ```bash
 --gpu -2          # -2 自动 / -1 CPU / 0+ 设备号
 --threads 4       # 推理线程数
+--instances 1     # 插值并发实例数（单 GPU 上 1 通常最优，多实例显存翻倍且吞吐增益有限）
+--rdt 0.03        # 去重阈值 Sensitivity，相邻帧差异低于此值时复制跳过推理，0 关闭
+--vram 2          # 每会话显存上限 GB（默认 2，防止无界增长吃满显存）
 --overlap 16      # 分块重叠像素
 --start 0 --end 99  # 只处理指定帧范围
 --workdir <dir>   # 临时 ONNX 解包目录
@@ -96,6 +99,9 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 
 ## 已知限制
 
-- 插帧模型（Apollo/Aion）在部分 Blackwell GPU 上曾有 CUDA 兼容问题，已通过 ReduceMean 补丁解决；若仍异常可 `--gpu -1` 退回 CPU（正确但慢）。
-- Aion 按训练尺寸（4 的倍数）分块推理，不做全帧动态推理。
+- 插帧模型在部分 Blackwell GPU 上曾有 CUDA 兼容问题（fp16 ReduceMean 溢出），已通过 ONNX 补丁解决；若仍异常可 `--gpu -1` 退回 CPU（正确但慢）。
+- **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），每帧 4K 约数十秒。当前实现 GPU 占用在 0-100% 间横跳（未做流水线重叠，GPU 约 40% 时间在空转等 CPU）。Topaz 靠流水线重叠 + TensorRT + Sensitivity 去重跳帧达到稳定 80% GPU，这些尚未复刻，见调查文档的性能分析。
+- `rdt` 与 `instances` 已实现；流水线重叠（解码‖推理‖编码）尚未做，GPU 仍有空转。
+- Aion 按训练尺寸（32 的倍数）分块推理，实测小 tile 比大 tile 更快。
 - 非 2 幂倍数（3/6/10/12）的时间位置为最近子帧近似。
+- Topaz 在 RTX 5090（cc 12.0）上因 TensorRT 后端不支持 Blackwell 而回退 onnxruntime，其速度来自软件优化（批处理/流/去重）而非 TRT，见调查文档。

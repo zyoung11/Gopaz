@@ -19,24 +19,29 @@ func NewFrame(w, h int) *Frame {
 // FromRGB24 从原始 RGB24 字节（0-255）转为 [0,1] 浮点帧。
 func FromRGB24(b []byte, w, h int) *Frame {
 	f := &Frame{W: w, H: h, Data: make([]float32, w*h*3)}
-	for i := 0; i < w*h*3; i++ {
-		f.Data[i] = float32(b[i]) / 255.0
-	}
+	parallelRows(w*h, func(s, e int) {
+		for i := s * 3; i < e*3; i++ {
+			f.Data[i] = float32(b[i]) / 255.0
+		}
+	})
 	return f
 }
 
 // ToRGB24 转回 RGB24 字节，越界值做截断。
 func (f *Frame) ToRGB24() []byte {
 	out := make([]byte, f.W*f.H*3)
-	for i, v := range f.Data {
-		if v < 0 {
-			v = 0
+	parallelRows(f.W*f.H, func(s, e int) {
+		for i := s * 3; i < e*3; i++ {
+			v := f.Data[i]
+			if v < 0 {
+				v = 0
+			}
+			if v > 1 {
+				v = 1
+			}
+			out[i] = byte(v*255 + 0.5)
 		}
-		if v > 1 {
-			v = 1
-		}
-		out[i] = byte(v*255 + 0.5)
-	}
+	})
 	return out
 }
 
@@ -50,17 +55,19 @@ func (f *Frame) Clone() *Frame {
 // ExtractTile 提取一个 tile，坐标为输入帧空间。若越界则用边缘像素填充（replicate）。
 func (f *Frame) ExtractTile(x, y, tw, th int) *Frame {
 	t := NewFrame(tw, th)
-	for j := 0; j < th; j++ {
-		sy := clampInt(y+j, 0, f.H-1)
-		for i := 0; i < tw; i++ {
-			sx := clampInt(x+i, 0, f.W-1)
-			si := (sy*f.W + sx) * 3
-			di := (j*tw + i) * 3
-			t.Data[di] = f.Data[si]
-			t.Data[di+1] = f.Data[si+1]
-			t.Data[di+2] = f.Data[si+2]
+	parallelRows(th, func(js, je int) {
+		for j := js; j < je; j++ {
+			sy := clampInt(y+j, 0, f.H-1)
+			for i := 0; i < tw; i++ {
+				sx := clampInt(x+i, 0, f.W-1)
+				si := (sy*f.W + sx) * 3
+				di := (j*tw + i) * 3
+				t.Data[di] = f.Data[si]
+				t.Data[di+1] = f.Data[si+1]
+				t.Data[di+2] = f.Data[si+2]
+			}
 		}
-	}
+	})
 	return t
 }
 
@@ -76,25 +83,27 @@ func FillRampWeight(w *Frame, ramp int) {
 // MergeTileWeighted 把放大后的 tile 按 tileW 权重累加进画布，
 // 同时把权重累加到全局权重图。
 func MergeTileWeighted(canvas, canvasW, tile, tileW *Frame, ox, oy int) {
-	for j := 0; j < tile.H; j++ {
-		dy := oy + j
-		if dy < 0 || dy >= canvas.H {
-			continue
-		}
-		for i := 0; i < tile.W; i++ {
-			dx := ox + i
-			if dx < 0 || dx >= canvas.W {
+	parallelRows(tile.H, func(js, je int) {
+		for j := js; j < je; j++ {
+			dy := oy + j
+			if dy < 0 || dy >= canvas.H {
 				continue
 			}
-			ti := (j*tile.W + i) * 3
-			ci := (dy*canvas.W + dx) * 3
-			w := tileW.Data[j*tile.W+i]
-			canvas.Data[ci] += tile.Data[ti] * w
-			canvas.Data[ci+1] += tile.Data[ti+1] * w
-			canvas.Data[ci+2] += tile.Data[ti+2] * w
-			canvasW.Data[dy*canvasW.W+dx] += w
+			for i := 0; i < tile.W; i++ {
+				dx := ox + i
+				if dx < 0 || dx >= canvas.W {
+					continue
+				}
+				ti := (j*tile.W + i) * 3
+				ci := (dy*canvas.W + dx) * 3
+				w := tileW.Data[j*tile.W+i]
+				canvas.Data[ci] += tile.Data[ti] * w
+				canvas.Data[ci+1] += tile.Data[ti+1] * w
+				canvas.Data[ci+2] += tile.Data[ti+2] * w
+				canvasW.Data[dy*canvasW.W+dx] += w
+			}
 		}
-	}
+	})
 }
 
 

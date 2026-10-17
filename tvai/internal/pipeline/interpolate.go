@@ -5,10 +5,13 @@ import (
 	"io"
 	"math"
 	"os"
+	"sync"
+	"time"
 
 	"tvai/internal/encode"
 	"tvai/internal/log"
 	"tvai/internal/model"
+	"tvai/internal/ort"
 	"tvai/internal/video"
 )
 
@@ -19,6 +22,9 @@ type InterpJob struct {
 	ModelDir string
 	Model    *model.Model
 	Factor   int
+	RDT      float64 // 去重阈值（Sensitivity），<=0 关闭
+	Instances int    // 并发实例数
+	VramGB    float64 // 每会话显存上限(GB)
 	GPU      int
 	Threads  int
 	Overlap  int
@@ -31,6 +37,7 @@ type InterpJob struct {
 
 // RunInterpolate 执行插帧/慢放主流程。
 func RunInterpolate(job InterpJob) error {
+	startAll := time.Now()
 	info, err := video.Probe(job.Ffprobe, job.Input)
 	if err != nil {
 		return err
@@ -68,7 +75,7 @@ func RunInterpolate(job InterpJob) error {
 	// 插帧不改分辨率：scale 空间为 1，仅时间轴加密。
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
-		FW: fw, FH: fh, Params: map[string]float64{}, Overlap: job.Overlap,
+		FW: fw, FH: fh, Params: map[string]float64{}, Overlap: job.Overlap, Instances: job.Instances, VramGB: job.VramGB,
 		GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
 	}
 	r, err := LoadRunner(cfg)
@@ -143,6 +150,11 @@ func RunInterpolate(job InterpJob) error {
 	if overlap <= 0 {
 		overlap = 16
 	}
+	rdt := job.RDT
+	if rdt < 0 {
+		rdt = 0
+	}
+	var skipped int
 	// 验证 CUDA 推理是否产出有效值：部分模型（如 Apollo）在个别 GPU 上会
 	// 产出 NaN。若检测到则回退到 CPU（较慢但正确）。
 	if job.GPU != -1 {
@@ -174,23 +186,42 @@ func RunInterpolate(job InterpJob) error {
 	}
 	for j := 0; j < total-1; j++ {
 		window := []*Frame{frameAt(j - 1), frameAt(j), frameAt(j + 1), frameAt(j + 2)}
-		for k := 1; k < n; k++ {
-			t := float64(k) / float64(n)
-			subIdx := int(math.Round(t*float64(subdiv))) - 1
-			if subIdx < 0 {
-				subIdx = 0
+		// rdt 去重：相邻帧几乎相同（静止）时直接复制，跳过推理。
+		skip := false
+		if rdt > 0 {
+			if d := SceneDiff(frameAt(j), frameAt(j+1)); d < rdt {
+				skip = true
+				skipped += n - 1
 			}
-			if subIdx > subdiv-1 {
-				subIdx = subdiv - 1
+		}
+		if skip {
+			// 静止片段：用目标帧填充中间帧。
+			dup := frameAt(j + 1)
+			for k := 1; k < n; k++ {
+				if err := writeOrig(dup); err != nil {
+					enc.Close()
+					return err
+				}
 			}
-			interp, err := processInterpFrame(r, window, fw, fh, th, tw, subIdx, overlap)
-			if err != nil {
-				enc.Close()
-				return err
-			}
-			if err := writeOrig(interp); err != nil {
-				enc.Close()
-				return err
+		} else {
+			for k := 1; k < n; k++ {
+				t := float64(k) / float64(n)
+				subIdx := int(math.Round(t*float64(subdiv))) - 1
+				if subIdx < 0 {
+					subIdx = 0
+				}
+				if subIdx > subdiv-1 {
+					subIdx = subdiv - 1
+				}
+				interp, err := processInterpFrame(r, window, fw, fh, th, tw, subIdx, overlap)
+				if err != nil {
+					enc.Close()
+					return err
+				}
+				if err := writeOrig(interp); err != nil {
+					enc.Close()
+					return err
+				}
 			}
 		}
 		if err := writeOrig(frameAt(j + 1)); err != nil {
@@ -208,6 +239,11 @@ func RunInterpolate(job InterpJob) error {
 		}
 	}
 	log.ProgressDone()
+	wall := time.Since(startAll).Seconds()
+	log.Infof("耗时分解: 总 %.1fs, 模型推理 %.1fs (%.0f%%), 其余 %.1fs", wall, float64(r.inferNanos)/1e9, float64(r.inferNanos)/1e9/wall*100, wall-float64(r.inferNanos)/1e9)
+	if skipped > 0 {
+		log.Infof("rdt 去重跳过 %d/%d 插值帧 (%.0f%%)", skipped, outCount, float64(skipped)/float64(outCount)*100)
+	}
 	if err := enc.Close(); err != nil {
 		os.Remove(tmpVideo)
 		return fmt.Errorf("编码收尾失败: %w", err)
@@ -233,28 +269,118 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 	if stepY <= 0 {
 		stepY = th
 	}
+	// 1. 收集 tile 位置。
+	var xs, ys []int
 	for y := 0; y < fh; y += stepY {
 		for x := 0; x < fw; x += stepX {
-			tiles := make([]*Frame, 0, 4)
-			for _, f := range window {
-				tiles = append(tiles, f.ExtractTile(x, y, tw, th))
-			}
-			raw, err := r.ProcessTile(tiles, 1, x, y)
-			if err != nil {
-				return nil, err
-			}
-			sub := ExtractSubFrame(raw, subIdx)
-			ramp := overlap
-			if ramp > sub.W {
-				ramp = sub.W / 4
-			}
-			if ramp > sub.H {
-				ramp = sub.H / 4
-			}
-			tileW := NewFrame(sub.W, sub.H)
-			FillRampWeight(tileW, ramp)
-			MergeTileWeighted(canvas, weight, sub, tileW, x, y)
+			xs = append(xs, x)
+			ys = append(ys, y)
 		}
+	}
+	np := len(xs)
+	if np == 0 {
+		return canvas, nil
+	}
+	// 2. 提取所有 tile（每 tile 内部并行）。
+	tileWins := make([][]*Frame, np)
+	for i := 0; i < np; i++ {
+		win := make([]*Frame, len(window))
+		for j, f := range window {
+			win[j] = f.ExtractTile(xs[i], ys[i], tw, th)
+		}
+		tileWins[i] = win
+	}
+	// 3. 分批 + 跨会话并发推理（保持 GPU 喂饱）。
+	nInst := len(r.pool)
+	if nInst < 1 {
+		nInst = 1
+	}
+	batchSize := 4
+	type batch struct{ idx []int }
+	var batches []batch
+	for s := 0; s < np; s += batchSize {
+		e := s + batchSize
+		if e > np {
+			e = np
+		}
+		idx := make([]int, 0, e-s)
+		for i := s; i < e; i++ {
+			idx = append(idx, i)
+		}
+		batches = append(batches, batch{idx})
+	}
+	results := make([]*Frame, np)
+	sessCh := make(chan int, nInst)
+	for i := 0; i < nInst; i++ {
+		sessCh <- i
+	}
+	batchCh := make(chan batch)
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var firstErr error
+	workers := nInst
+	if workers > len(batches) {
+		workers = len(batches)
+	}
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for b := range batchCh {
+				si := <-sessCh
+				main := r.pool[si]
+				var bot *ort.Session
+				if si < len(r.bottomPool) {
+					bot = r.bottomPool[si]
+				}
+				tilesBatch := make([][]*Frame, len(b.idx))
+				for k, ti := range b.idx {
+					tilesBatch[k] = tileWins[ti]
+				}
+				raws, err := r.runInterpBatch(main, bot, tilesBatch)
+				sessCh <- si
+				if err != nil {
+					mu.Lock()
+					if firstErr == nil {
+						firstErr = err
+					}
+					mu.Unlock()
+					continue
+				}
+				for k, ti := range b.idx {
+					sub := ExtractSubFrame(raws[k], subIdx)
+					mu.Lock()
+					results[ti] = sub
+					mu.Unlock()
+				}
+			}
+		}()
+	}
+	for _, b := range batches {
+		batchCh <- b
+	}
+	close(batchCh)
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	// 4. 融合（每 tile 内部并行）。
+	ramp := overlap
+	for i := 0; i < np; i++ {
+		sub := results[i]
+		if sub == nil {
+			continue
+		}
+		r := ramp
+		if r > sub.W {
+			r = sub.W / 4
+		}
+		if r > sub.H {
+			r = sub.H / 4
+		}
+		tileW := NewFrame(sub.W, sub.H)
+		FillRampWeight(tileW, r)
+		MergeTileWeighted(canvas, weight, sub, tileW, xs[i], ys[i])
 	}
 	NormalizeCanvas(canvas, weight)
 	return canvas, nil

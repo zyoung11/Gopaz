@@ -141,6 +141,9 @@ func cmdInterpolate(args []string) error {
 	out := fs.String("o", "", "输出视频")
 	mk := fs.String("model", "apollo", "模型")
 	factor := fs.Int("factor", 2, "慢放倍数")
+	instances := fs.Int("instances", 3, "插值并发实例数")
+	rdt := fs.Float64("rdt", 0, "去重阈值 Sensitivity，0 关闭")
+	vram := fs.Float64("vram", 0, "每会话显存上限 GB，默认 2")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
 	threads := fs.Int("threads", 0, "线程数")
 	overlap := fs.Int("overlap", 16, "重叠")
@@ -172,6 +175,7 @@ func cmdInterpolate(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
 		GPU: *gpu, Threads: *threads, Overlap: *overlap, WorkDir: *work,
+		Instances: *instances, RDT: *rdt, VramGB: *vram,
 		StartFrame: *start, EndFrame: *end,
 		Encode: encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
 		AudioMode: *audioCodec, AudioBitrate: *audioBitrate,
