@@ -13,20 +13,24 @@ import (
 
 // UpscaleJob 描述一次超分任务。
 type UpscaleJob struct {
-	Input, Output string
+	Input, Output   string
 	Ffmpeg, Ffprobe string
-	ModelDir string
-	Model    *model.Model
-	Scale    int
-	Params   map[string]float64
-	GPU      int
-	Threads  int
-	Overlap  int
-	WorkDir  string
+	ModelDir        string
+	Model           *model.Model
+	Scale           int
+	Params          map[string]float64
+	GPU             int
+	Threads         int
+	Overlap         int
+	// KColor 为 true 时按模型 keepColor 做 Lab 色彩校正。
+	KColor bool
+	// SceneThreshold 为场景切换阈值，0=默认 6.5。
+	SceneThreshold       float64
+	WorkDir              string
 	StartFrame, EndFrame int
-	Encode   encode.Options
-	AudioMode string
-	AudioBitrate int
+	Encode               encode.Options
+	AudioMode            string
+	AudioBitrate         int
 }
 
 // RunUpscale 执行超分/修复主流程。
@@ -49,7 +53,8 @@ func RunUpscale(job UpscaleJob) error {
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
 		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
-		GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
+		SceneThreshold: job.SceneThreshold,
+		GPU:            job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {
@@ -86,18 +91,12 @@ func RunUpscale(job UpscaleJob) error {
 	ring := make([]*Frame, so)
 	var lastFrame *Frame
 	readPos, emitPos := 0, 0
-	total := info.Frames
-	if total < 0 {
-		total = 0
-	}
+	total := max(info.Frames, 0)
 
 	frameIdx := 0
 	buf := make([]byte, fw*fh*3)
-	overlap := job.Overlap
-	if overlap <= 0 {
-		overlap = 16
-	}
-	needTemporal := job.Model.Key == "proteus"
+	overlap := r.Overlap()
+	needTemporal := r.HasInput("hr_prev")
 
 	readMore := func() bool {
 		if total > 0 && readPos >= total {
@@ -162,17 +161,18 @@ func RunUpscale(job UpscaleJob) error {
 			window[j] = frameAt(emitPos - center + j)
 		}
 		centerFrame := frameAt(emitPos)
-		if needTemporal {
-			if r.prevHR == nil {
-				r.ResetTemporal(centerFrame.UpscaleBilinear(outW, outH))
-			} else if r.prevIn != nil && SceneDiff(r.prevIn, centerFrame) > 0.35 {
-				r.ResetTemporal(centerFrame.UpscaleBilinear(outW, outH))
-			}
+		if needTemporal && r.prevHR == nil {
+			r.ResetTemporal(centerFrame.UpscaleBilinear(outW, outH))
 		}
-		outFrame, err := processFrame(r, window, fw, fh, th, tw, job.Scale, overlap)
+		rawFrame, err := processFrame(r, window, fw, fh, th, tw, job.Scale, overlap)
 		if err != nil {
 			enc.Close()
 			return err
+		}
+		outFrame := rawFrame
+		if job.Model.KeepColor && job.KColor {
+			outFrame = rawFrame.Clone()
+			ColorTransferLab(centerFrame, outFrame)
 		}
 		if err := enc.WriteFrame(outFrame.ToRGB24()); err != nil {
 			enc.Close()
@@ -182,8 +182,7 @@ func RunUpscale(job UpscaleJob) error {
 			return err
 		}
 		if needTemporal {
-			r.SetPrevOutput(outFrame)
-			r.prevIn = centerFrame.Clone()
+			r.SetPrevOutput(rawFrame)
 		}
 		frameIdx++
 		emitPos++
@@ -254,4 +253,3 @@ func processFrame(r *Runner, window []*Frame, fw, fh, th, tw, scale, overlap int
 	NormalizeCanvas(canvas, weight)
 	return canvas, nil
 }
-

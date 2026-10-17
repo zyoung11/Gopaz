@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -26,7 +27,7 @@ type Info struct {
 func Probe(ffprobe, path string) (*Info, error) {
 	cmd := exec.Command(ffprobe, "-v", "error",
 		"-select_streams", "v:0",
-		"-show_entries", "stream=width,height,r_frame_rate,nb_frames,duration:stream_side_data=rotation",
+		"-show_entries", "stream=width,height,r_frame_rate,nb_frames,duration:stream_side_data=rotation:format=duration",
 		"-of", "default=noprint_wrappers=1", path)
 	out, err := cmd.Output()
 	if err != nil {
@@ -53,6 +54,9 @@ func Probe(ffprobe, path string) (*Info, error) {
 		}
 	}
 	// 检测音频流。
+	if info.Frames <= 0 && info.Duration > 0 && info.FPS > 0 {
+		info.Frames = int(math.Round(info.Duration * info.FPS))
+	}
 	acmd := exec.Command(ffprobe, "-v", "error", "-select_streams", "a",
 		"-show_entries", "stream=codec_type", "-of", "csv=p=0", path)
 	if aout, err := acmd.Output(); err == nil && len(trimSpace(string(aout))) > 0 {
@@ -212,4 +216,3 @@ func trimSpace(s string) string {
 	}
 	return s[i:j]
 }
-

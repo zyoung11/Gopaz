@@ -24,7 +24,7 @@ type pbField struct {
 func readVarint(b []byte) (uint64, int) {
 	var v uint64
 	var s uint
-	for i := 0; i < len(b); i++ {
+	for i := range b {
 		c := b[i]
 		v |= uint64(c&0x7f) << s
 		if c&0x80 == 0 {
@@ -271,9 +271,9 @@ func buildCastNode(in, out string, toType int) ([]byte, error) {
 		{20, 0, appendVarint(nil, atInt)},
 	}
 	node := []pbField{
-		{1, 2, []byte(in)},   // input
-		{2, 2, []byte(out)},  // output
-		{4, 2, []byte("Cast")}, // op_type
+		{1, 2, []byte(in)},        // input
+		{2, 2, []byte(out)},       // output
+		{4, 2, []byte("Cast")},    // op_type
 		{5, 2, writeFields(attr)}, // attribute
 	}
 	return writeFields(node), nil

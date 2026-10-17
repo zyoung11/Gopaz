@@ -22,7 +22,7 @@ type zipCrypto struct {
 
 func (z *zipCrypto) updateKeys(b byte) {
 	z.key0 = crc32Byte(z.key0, b)
-	z.key1 = (z.key1 + uint32(z.key0&0xff)) * 134775813 + 1
+	z.key1 = (z.key1+uint32(z.key0&0xff))*134775813 + 1
 	z.key2 = crc32Byte(z.key2, byte(z.key1>>24))
 }
 
@@ -41,7 +41,7 @@ func (z *zipCrypto) init(password []byte) {
 // crc32Byte 用查表法计算 CRC32（多项式 0xEDB88320），逐字节更新。
 func crc32Byte(crc uint32, b byte) uint32 {
 	crc ^= uint32(b)
-	for i := 0; i < 8; i++ {
+	for range 8 {
 		if crc&1 != 0 {
 			crc = (crc >> 1) ^ 0xEDB88320
 		} else {
@@ -101,7 +101,7 @@ func Extract(data []byte, password string) ([]byte, error) {
 		c.init([]byte(password))
 		// 解密 12 字节加密头（前 11 字节为随机，最后 1 字节为校验）。
 		hdr := make([]byte, 12)
-		for i := 0; i < 12; i++ {
+		for i := range 12 {
 			p := enc[i] ^ c.decryptByte()
 			c.updateKeys(p)
 			hdr[i] = p
@@ -139,10 +139,7 @@ func findEOCD(data []byte) int {
 	if limit < 0 {
 		return -1
 	}
-	start := len(data) - 22 - 65535
-	if start < 0 {
-		start = 0
-	}
+	start := max(len(data)-22-65535, 0)
 	for i := limit; i >= start; i-- {
 		if binary.LittleEndian.Uint32(data[i:]) == 0x06054b50 {
 			return i

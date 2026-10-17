@@ -58,7 +58,7 @@ func (f *Frame) ExtractTile(x, y, tw, th int) *Frame {
 	parallelRows(th, func(js, je int) {
 		for j := js; j < je; j++ {
 			sy := clampInt(y+j, 0, f.H-1)
-			for i := 0; i < tw; i++ {
+			for i := range tw {
 				sx := clampInt(x+i, 0, f.W-1)
 				si := (sy*f.W + sx) * 3
 				di := (j*tw + i) * 3
@@ -106,7 +106,6 @@ func MergeTileWeighted(canvas, canvasW, tile, tileW *Frame, ox, oy int) {
 	})
 }
 
-
 // rampWeight 计算一个 tile 内某像素的融合权重：边缘用线性斜坡过渡，内部为 1。
 // ramp 是斜坡宽度（输出空间像素数）。
 func rampWeight(i, j, w, h, ramp int) float32 {
@@ -151,7 +150,7 @@ func (f *Frame) UpscaleBilinear(nw, nh int) *Frame {
 	out := NewFrame(nw, nh)
 	sxRatio := float64(f.W) / float64(nw)
 	syRatio := float64(f.H) / float64(nh)
-	for j := 0; j < nh; j++ {
+	for j := range nh {
 		sy := (float64(j)+0.5)*syRatio - 0.5
 		y0 := clampInt(int(math.Floor(sy)), 0, f.H-1)
 		y1 := clampInt(y0+1, 0, f.H-1)
@@ -159,7 +158,7 @@ func (f *Frame) UpscaleBilinear(nw, nh int) *Frame {
 		if sy < 0 {
 			fy = 0
 		}
-		for i := 0; i < nw; i++ {
+		for i := range nw {
 			sx := (float64(i)+0.5)*sxRatio - 0.5
 			x0 := clampInt(int(math.Floor(sx)), 0, f.W-1)
 			x1 := clampInt(x0+1, 0, f.W-1)
@@ -167,7 +166,7 @@ func (f *Frame) UpscaleBilinear(nw, nh int) *Frame {
 			if sx < 0 {
 				fx = 0
 			}
-			for c := 0; c < 3; c++ {
+			for c := range 3 {
 				v00 := f.Data[(y0*f.W+x0)*3+c]
 				v01 := f.Data[(y0*f.W+x1)*3+c]
 				v10 := f.Data[(y1*f.W+x0)*3+c]
@@ -193,9 +192,47 @@ func hasNaN(s []float32) bool {
 	return false
 }
 
-// chooseTile 为给定帧尺寸挑选合适的 tile。candidates 每个元素为 {W, H}。
-// 返回 (tileW, tileH)。策略：在能完整放进帧（W<=fw 且 H<=fh）的候选中选面积最大者。
-func chooseTile(candidates [][2]int, fw, fh int) (int, int) {
+// TilePenalty 是 Topaz 选块评分中的每块惩罚系数。
+const TilePenalty = 0.05
+
+// chooseTile 按 Topaz 的评分选择固定块模型的 tile。
+func chooseTile(candidates [][2]int, fw, fh, overlap int, penalty float64) (int, int) {
+	if len(candidates) == 0 {
+		return fw, fh
+	}
+	area := float64(fw) * float64(fh)
+	bestW, bestH := candidates[0][0], candidates[0][1]
+	best := math.MaxFloat64
+	found := false
+	for _, c := range candidates {
+		tw, th := c[0], c[1]
+		if tw <= overlap || th <= overlap {
+			continue
+		}
+		nx := ceilDiv(fw-overlap, tw-overlap)
+		ny := ceilDiv(fh-overlap, th-overlap)
+		if nx < 1 {
+			nx = 1
+		}
+		if ny < 1 {
+			ny = 1
+		}
+		n := float64(nx * ny)
+		score := n*penalty + (n*float64(tw)*float64(th)-area)/area
+		if !found || score < best {
+			found = true
+			best = score
+			bestW, bestH = tw, th
+		}
+	}
+	if !found {
+		return candidates[0][0], candidates[0][1]
+	}
+	return bestW, bestH
+}
+
+// chooseTileMax 在能完整放进帧的候选里选面积最大者（用于动态尺寸模型）。
+func chooseTileMax(candidates [][2]int, fw, fh int) (int, int) {
 	if len(candidates) == 0 {
 		return fw, fh
 	}
@@ -224,6 +261,13 @@ func chooseTile(candidates [][2]int, fw, fh int) (int, int) {
 	return bestW, bestH
 }
 
+func ceilDiv(a, b int) int {
+	if a <= 0 {
+		return 0
+	}
+	return (a + b - 1) / b
+}
+
 func clampInt(v, lo, hi int) int {
 	if v < lo {
 		return lo
@@ -241,7 +285,7 @@ func SceneDiff(a, b *Frame) float64 {
 	}
 	var sum float64
 	n := len(a.Data)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		d := float64(a.Data[i]) - float64(b.Data[i])
 		if d < 0 {
 			d = -d
@@ -250,4 +294,3 @@ func SceneDiff(a, b *Frame) float64 {
 	}
 	return sum / float64(n)
 }
-

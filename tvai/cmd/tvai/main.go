@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -53,20 +54,25 @@ func usage() {
   tvai encoders     列出可用编码器
 
 模型:
-  超分:  proteus(可调参数)  gaia  gaia-cg
+  超分:  proteus  gaia  gaia-cg
   插帧:  apollo  aion
 
-超分参数 (proteus 支持，取值 0-100，deblur 为 -100~100):
+超分参数 (proteus 支持，取值 -100~100):
   --denoise --detail --dehalo --sharpen --fix-compression --deblur
 
 插帧参数:
   --factor  慢放倍数 (2,3,4,6,8,10,12,16)
-  --rdt     去重阈值 (-0.01~0.2, 默认 0.01)
+  --sensitivity 10  重复帧替换灵敏度 0-100 (rdt=Sensitivity/1000，0 关闭)
+  --rdt -1          原始 rdt 阈值覆盖 (-0.01~0.2，-1=用 sensitivity)
 
 通用:
   --gpu     -2自动 -1 CPU 0+设备号 (默认 -2)
   --threads 推理线程数
-  --overlap 分块重叠像素 (默认 16)
+  --overlap 分块重叠，0=自动 (增强/插帧 48, Aion 32)
+  --kcolor  keepColor 色彩校正 0/1 (默认 1)
+  --scene-threshold 场景切换阈值 (默认 6.5)
+  --vram    每会话显存上限 GB (本工具语义，Topaz 的 vram 是显存比例)
+  --instances 插值总会话数 (本工具语义，Topaz 的 instances 是额外实例数)
   --start --end  处理帧范围
   --ffmpeg --ffprobe  可执行文件路径 (默认从 PATH 或 Topaz 目录)`)
 }
@@ -79,7 +85,9 @@ func cmdUpscale(args []string) error {
 	scale := fs.Int("scale", 1, "倍率 1/2/4")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
 	threads := fs.Int("threads", 0, "线程数")
-	overlap := fs.Int("overlap", 16, "重叠")
+	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
+	kcolor := fs.Int("kcolor", 1, "keepColor 色彩校正 0/1")
+	sceneThreshold := fs.Float64("scene-threshold", 6.5, "场景切换阈值")
 	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
 	ffprobe := fs.String("ffprobe", "", "ffprobe 路径")
 	work := fs.String("workdir", "", "临时目录")
@@ -128,8 +136,9 @@ func cmdUpscale(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
 		Params: params, GPU: *gpu, Threads: *threads, Overlap: *overlap,
+		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
 		WorkDir: *work, StartFrame: *start, EndFrame: *end,
-		Encode: encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
+		Encode:    encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
 		AudioMode: *audioCodec, AudioBitrate: *audioBitrate,
 	}
 	return pipeline.RunUpscale(job)
@@ -142,11 +151,12 @@ func cmdInterpolate(args []string) error {
 	mk := fs.String("model", "apollo", "模型")
 	factor := fs.Int("factor", 2, "慢放倍数")
 	instances := fs.Int("instances", 3, "插值并发实例数")
-	rdt := fs.Float64("rdt", 0, "去重阈值 Sensitivity，0 关闭")
+	rdt := fs.Float64("rdt", -1, "原始去重阈值，-1=使用 --sensitivity")
+	sensitivity := fs.Int("sensitivity", 10, "重复帧替换灵敏度 0-100，0 关闭")
 	vram := fs.Float64("vram", 0, "每会话显存上限 GB，默认 2")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
 	threads := fs.Int("threads", 0, "线程数")
-	overlap := fs.Int("overlap", 16, "重叠")
+	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
 	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
 	ffprobe := fs.String("ffprobe", "", "ffprobe 路径")
 	work := fs.String("workdir", "", "临时目录")
@@ -175,9 +185,9 @@ func cmdInterpolate(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
 		GPU: *gpu, Threads: *threads, Overlap: *overlap, WorkDir: *work,
-		Instances: *instances, RDT: *rdt, VramGB: *vram,
+		Instances: *instances, RDT: *rdt, Sensitivity: *sensitivity, VramGB: *vram,
 		StartFrame: *start, EndFrame: *end,
-		Encode: encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
+		Encode:    encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
 		AudioMode: *audioCodec, AudioBitrate: *audioBitrate,
 	}
 	return pipeline.RunInterpolate(job)
@@ -222,12 +232,7 @@ func cmdEncoders() {
 }
 
 func containsInt(s []int, v int) bool {
-	for _, x := range s {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(s, v)
 }
 
 func resolveFfmpeg(ff, fp string) (string, string) {

@@ -13,27 +13,27 @@ import (
 
 // Element type 常量，对应 ONNXTensorElementDataType。
 const (
-	Float  = 1
-	Uint8  = 2
-	Int8   = 3
-	Uint16 = 4
-	Int16  = 5
-	Int32  = 6
-	Int64  = 7
-	String = 8
-	Bool   = 9
+	Float   = 1
+	Uint8   = 2
+	Int8    = 3
+	Uint16  = 4
+	Int16   = 5
+	Int32   = 6
+	Int64   = 7
+	String  = 8
+	Bool    = 9
 	Float16 = 10
-	Double = 11
-	Uint32 = 12
-	Uint64 = 13
+	Double  = 11
+	Uint32  = 12
+	Uint64  = 13
 )
 
 var (
-	once      sync.Once
-	apiPtr    uintptr
-	initErr   error
-	dllPath   string
-	keepAlive [][]byte
+	once       sync.Once
+	apiPtr     uintptr
+	initErr    error
+	dllPath    string
+	keepAlive  [][]byte
 	keepAliveW [][]uint16
 )
 
@@ -134,11 +134,11 @@ type Session struct {
 
 // SessionOptions 配置会话。
 type SessionOptions struct {
-	IntraOpThreads  int
-	GraphOptLevel   int
-	CUDA            bool
-	CUDADeviceID    int
-	GPUMemLimit     uint64
+	IntraOpThreads    int
+	GraphOptLevel     int
+	CUDA              bool
+	CUDADeviceID      int
+	GPUMemLimit       uint64
 	CopyDefaultStream bool
 	// CUDNNAlgo: 0=Exhaustive(默认), 1=Heuristic, 2=Default。某些模型在
 	// Blackwell 上 exhaustive 选出的算法会产出 NaN，此时可调为 1 或 2。
@@ -302,7 +302,6 @@ func (t *Tensor) Data() unsafe.Pointer {
 	return unsafe.Pointer(dp)
 }
 
-
 // Destroy 释放张量。
 func (t *Tensor) Destroy() {
 	if t.ptr != 0 {
@@ -316,13 +315,13 @@ func (s *Session) Run(inputNames []string, inputs []*Tensor, outputNames []strin
 	nIn := len(inputNames)
 	namePtrs := make([]uintptr, nIn)
 	valPtrs := make([]uintptr, nIn)
-	for i := 0; i < nIn; i++ {
+	for i := range nIn {
 		namePtrs[i] = uintptr(unsafe.Pointer(cstr(inputNames[i])))
 		valPtrs[i] = inputs[i].ptr
 	}
 	nOut := len(outputNames)
 	outNamePtrs := make([]uintptr, nOut)
-	for i := 0; i < nOut; i++ {
+	for i := range nOut {
 		outNamePtrs[i] = uintptr(unsafe.Pointer(cstr(outputNames[i])))
 	}
 	outVals := make([]uintptr, nOut)
@@ -334,7 +333,7 @@ func (s *Session) Run(inputNames []string, inputs []*Tensor, outputNames []strin
 		return nil, err
 	}
 	res := make([]*Tensor, nOut)
-	for i := 0; i < nOut; i++ {
+	for i := range nOut {
 		res[i] = &Tensor{ptr: outVals[i]}
 	}
 	return res, nil

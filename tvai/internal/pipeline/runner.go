@@ -15,33 +15,37 @@ import (
 	"tvai/internal/tz"
 )
 
+// DefaultSceneChangeThreshold 是 Topaz 内部传入模型的场景切换阈值。
+const DefaultSceneChangeThreshold = 6.5
+
 // UpscaleConfig 是超分/修复的完整配置。
 type UpscaleConfig struct {
-	Model      *model.Model
-	ModelDir   string // .tz 文件目录
-	Scale      int    // 1/2/4
-	FW, FH     int    // 输入帧尺寸
-	Params     map[string]float64 // GUI 空间参数（0-100 或 -100-100）
-	Overlap    int    // 分块重叠（输入空间）
-	GPU        int    // -2 自动 / -1 CPU / 0+ 设备号
-	Threads    int
-	Instances  int    // 插值并发实例数（会话池大小）
-	VramGB     float64 // 每会话显存上限(GB)，0=默认2GB
-	WorkDir    string // 临时解包目录
+	Model          *model.Model
+	ModelDir       string             // .tz 文件目录
+	Scale          int                // 1/2/4
+	FW, FH         int                // 输入帧尺寸
+	Params         map[string]float64 // GUI 空间参数（-100-100）
+	Overlap        int                // 分块重叠（输入空间），0=按模型默认
+	SceneThreshold float64            // 场景切换阈值，0=默认 6.5
+	GPU            int                // -2 自动 / -1 CPU / 0+ 设备号
+	Threads        int
+	Instances      int     // 插值并发实例数（会话池大小）
+	VramGB         float64 // 每会话显存上限(GB)，0=默认2GB
+	WorkDir        string  // 临时解包目录
 }
 
 // Runner 持有一个已加载的模型会话。
 type Runner struct {
-	cfg  UpscaleConfig
-	sess *ort.Session
-	inputs  []ort.IOInfo
-	outputs []ort.IOInfo
-	tileH, tileW int
-	paramVec []float64 // 长度 6
+	cfg            UpscaleConfig
+	sess           *ort.Session
+	inputs         []ort.IOInfo
+	outputs        []ort.IOInfo
+	tileH, tileW   int
+	paramVec       []float64 // 长度 6
 	sceneThreshold float64
-	// 时序状态：上一帧的输出（输出分辨率）与上一帧输入（输入分辨率）。
-	prevHR   *Frame
-	prevIn   *Frame
+	overlap        int
+	// 时序状态：上一帧的输出（输出分辨率）。
+	prevHR *Frame
 	// 两级插帧的底部模型会话（如 Aion 的 aiob）。
 	bottom *ort.Session
 	// 并发实例池（多会话以保持 GPU 喂饱）。sess=pool[0], bottom=bottomPool[0]。
@@ -62,17 +66,47 @@ func (r *Runner) outputName() string {
 // SetPrevOutput 记录当前帧输出，供下一帧的 hr_prev 使用。
 func (r *Runner) SetPrevOutput(f *Frame) { r.prevHR = f }
 
-// ResetTemporal 重置时序状态（场景切换时调用）。base 为当前帧的双线性放大结果。
+// ResetTemporal 初始化时序状态，base 为当前帧的双线性放大结果。
 func (r *Runner) ResetTemporal(base *Frame) {
 	r.prevHR = base
+}
+
+// HasInput 判断模型是否声明了指定输入。
+func (r *Runner) HasInput(name string) bool {
+	for _, in := range r.inputs {
+		if in.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// Overlap 返回当前模型实际使用的分块重叠。
+func (r *Runner) Overlap() int { return r.overlap }
+
+// BatchLimit 返回插帧模型可用的 tile 批大小上限。
+func (r *Runner) BatchLimit() int {
+	for _, in := range r.inputs {
+		if in.Name == "in0" && len(in.Dim) > 0 && in.Dim[0] == 1 {
+			return 1
+		}
+	}
+	return 4
 }
 
 // LoadRunner 解包并加载模型，读取 IO 元数据。
 func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	m := cfg.Model
-	tw, th := chooseTile(m.TileHW, cfg.FW, cfg.FH)
-	if len(m.TileHW) == 0 {
-		tw, th = cfg.FW, cfg.FH
+	overlap := cfg.Overlap
+	if overlap <= 0 {
+		overlap = m.BlockOverlapOrDefault()
+	}
+	candidates := m.TileHW
+	var tw, th int
+	if m.SingleFile != "" {
+		tw, th = chooseTileMax(candidates, cfg.FW, cfg.FH)
+	} else {
+		tw, th = chooseTile(candidates, cfg.FW, cfg.FH, overlap, TilePenalty)
 	}
 	tzPath, err := m.TZPath(cfg.ModelDir, tw, th, cfg.Scale)
 	if err != nil {
@@ -149,7 +183,11 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
-	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), sceneThreshold: 0.04, pool: pool}
+	sceneThreshold := cfg.SceneThreshold
+	if sceneThreshold <= 0 {
+		sceneThreshold = DefaultSceneChangeThreshold
+	}
+	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), sceneThreshold: sceneThreshold, overlap: overlap, pool: pool}
 
 	// 两级插帧：加载底部模型（如 Aion 的 aiob），同样建实例池。
 	if bpath, _ := m.BottomTZPath(cfg.ModelDir); bpath != "" {
@@ -178,21 +216,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		r.bottomPool = bpool
 	}
 
-	// 默认参数：GUI 空间 0-100 → 模型空间 Min..Max。
 	for _, p := range m.Params {
-		v, ok := cfg.Params[p.Key]
-		if !ok {
-			v = 0 // GUI 默认：不处理
-		}
-		// GUI 归一化到 [0,1]（deblur 是 [-100,100]→[-1,1]）。
-		var norm float64
-		if p.Min < 0 {
-			norm = v / 100.0
-		} else {
-			norm = v / 100.0
-		}
-		clamped := math.Max(p.Min, math.Min(p.Max, norm))
-		r.paramVec[p.Tensor] = clamped
+		v := cfg.Params[p.Key]
+		r.paramVec[p.Tensor] = math.Max(-1, math.Min(1, v/100.0))
 	}
 	return r, nil
 }
@@ -228,7 +254,7 @@ func (r *Runner) runBottom(tiles []*Frame) (*Frame, error) {
 			t.Destroy()
 		}
 	}()
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		t, err := frameTensor(tiles[i], ort.Float)
 		if err != nil {
 			return nil, err
@@ -270,9 +296,9 @@ func downsampleRaw(raw *Frame, factor int) *Frame {
 			for i := 0; i < ow; i++ {
 				for c := 0; c < ch; c++ {
 					var sum float32
-					for dy := 0; dy < factor; dy++ {
-						for dx := 0; dx < factor; dx++ {
-							si := ((j*factor+dy)*raw.W + (i*factor+dx)) * ch
+					for dy := range factor {
+						for dx := range factor {
+							si := ((j*factor+dy)*raw.W + (i*factor + dx)) * ch
 							sum += raw.Data[si+c]
 						}
 					}
@@ -329,7 +355,7 @@ func (r *Runner) runInterpTile(tiles []*Frame) (*Frame, error) {
 	if len(tiles) < 4 {
 		return nil, fmt.Errorf("%s 需要 4 帧输入", m.Key)
 	}
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		name := fmt.Sprintf("in%d", i)
 		t, err := frameTensor(tiles[i], r.inputType(name))
 		if err != nil {
@@ -408,7 +434,7 @@ func readTensorFloats(t *ort.Tensor, n, elemType int) ([]float32, error) {
 	out := make([]float32, n)
 	if elemType == ort.Float16 {
 		src := unsafeSliceU16(p, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			out[i] = f16tof32(src[i])
 		}
 	} else {
@@ -493,38 +519,10 @@ func (r *Runner) runEnhance(tiles []*Frame, scale, ox, oy int) (*Frame, error) {
 	}
 
 	switch m.Key {
-	case "proteus":
-		if len(tiles) < 2 {
-			return nil, fmt.Errorf("proteus 需要 2 帧时序输入")
-		}
-		if err := mk("lr_prev", tiles[0]); err != nil {
-			return nil, err
-		}
-		if err := mk("lr_curr", tiles[1]); err != nil {
-			return nil, err
-		}
-		pt, err := r.paramTensor(r.paramVec)
-		if err != nil {
-			return nil, err
-		}
-		inputNames = append(inputNames, "params")
-		tensors = append(tensors, pt)
-		hr := r.extractHRTile(tw*scale, th*scale, ox, oy)
-		if err := mk("hr_prev", hr); err != nil {
-			return nil, err
-		}
-		st, err := r.scalarTensor(r.sceneThreshold)
-		if err != nil {
-			return nil, err
-		}
-		inputNames = append(inputNames, "scene_change_threshold")
-		tensors = append(tensors, st)
-
 	case "gaia", "gaia-cg":
 		if len(tiles) < m.Temporal {
 			return nil, fmt.Errorf("%s 需要 %d 帧时序输入", m.Key, m.Temporal)
 		}
-		// 输入名形如 VideoSR_Unet/inputFrameN:0。
 		for j := 0; j < m.Temporal; j++ {
 			name := fmt.Sprintf("VideoSR_Unet/inputFrame%d:0", j)
 			if err := mk(name, tiles[j]); err != nil {
@@ -532,7 +530,51 @@ func (r *Runner) runEnhance(tiles []*Frame, scale, ox, oy int) (*Frame, error) {
 			}
 		}
 	default:
-		return nil, fmt.Errorf("模型 %s 的增强输入构造尚未实现", m.Key)
+		center := m.CenterIdx
+		tileAt := func(i int) *Frame {
+			if i < 0 {
+				i = 0
+			}
+			if i >= len(tiles) {
+				i = len(tiles) - 1
+			}
+			return tiles[i]
+		}
+		if r.HasInput("lr_prev") {
+			if err := mk("lr_prev", tileAt(center-1)); err != nil {
+				return nil, err
+			}
+		}
+		if r.HasInput("lr_curr") {
+			if err := mk("lr_curr", tileAt(center)); err != nil {
+				return nil, err
+			}
+		}
+		if r.HasInput("params") {
+			pt, err := r.paramTensor(r.paramVec)
+			if err != nil {
+				return nil, err
+			}
+			inputNames = append(inputNames, "params")
+			tensors = append(tensors, pt)
+		}
+		if r.HasInput("hr_prev") {
+			hr := r.extractHRTile(tw*scale, th*scale, ox, oy)
+			if err := mk("hr_prev", hr); err != nil {
+				return nil, err
+			}
+		}
+		if r.HasInput("scene_change_threshold") {
+			st, err := r.scalarTensor(r.sceneThreshold)
+			if err != nil {
+				return nil, err
+			}
+			inputNames = append(inputNames, "scene_change_threshold")
+			tensors = append(tensors, st)
+		}
+	}
+	if len(inputNames) == 0 {
+		return nil, fmt.Errorf("模型 %s 的增强输入构造失败", m.Key)
 	}
 
 	t1 := time.Now()
@@ -583,7 +625,7 @@ func stackFrames(frames []*Frame, elemType int) (*ort.Tensor, error) {
 func splitBatchFrames(vals []float32, B, H, W, ch int) []*Frame {
 	per := H * W * ch
 	out := make([]*Frame, B)
-	for b := 0; b < B; b++ {
+	for b := range B {
 		out[b] = &Frame{W: W, H: H, Data: vals[b*per : (b+1)*per]}
 	}
 	return out
@@ -606,9 +648,9 @@ func (r *Runner) runInterpBatch(main, bot *ort.Session, tilesBatch [][]*Frame) (
 		}
 	}()
 	// in0..in3：各 [B,th,tw,3]
-	for i := 0; i < 4; i++ {
+	for i := range 4 {
 		frames := make([]*Frame, B)
-		for b := 0; b < B; b++ {
+		for b := range B {
 			frames[b] = tilesBatch[b][i]
 		}
 		name := fmt.Sprintf("in%d", i)
@@ -625,9 +667,9 @@ func (r *Runner) runInterpBatch(main, bot *ort.Session, tilesBatch [][]*Frame) (
 		bn = make([]string, 0, 4)
 		var bt []*ort.Tensor
 		bt0 := time.Now()
-		for i := 0; i < 4; i++ {
+		for i := range 4 {
 			frames := make([]*Frame, B)
-			for b := 0; b < B; b++ {
+			for b := range B {
 				frames[b] = tilesBatch[b][i]
 			}
 			name := fmt.Sprintf("in%d", i)
@@ -657,7 +699,7 @@ func (r *Runner) runInterpBatch(main, bot *ort.Session, tilesBatch [][]*Frame) (
 		// 每个 tile 降采样 4x 作 in8x
 		h8, w8 := th/4, tw/4
 		in8 := make([]float32, B*h8*w8*24)
-		for b := 0; b < B; b++ {
+		for b := range B {
 			raw := &Frame{W: tw, H: th, Data: bvals[b*tw*th*24 : (b+1)*tw*th*24]}
 			down := downsampleRaw(raw, 4)
 			copy(in8[b*h8*w8*24:], down.Data)
@@ -730,7 +772,7 @@ func tensorToFrameTyped(t *ort.Tensor, w, h int, elemType int) (*Frame, error) {
 	f := &Frame{W: w, H: h, Data: make([]float32, n)}
 	if elemType == ort.Float16 {
 		src := unsafeSliceU16(p, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			f.Data[i] = f16tof32(src[i])
 		}
 	} else {
@@ -739,4 +781,3 @@ func tensorToFrameTyped(t *ort.Tensor, w, h int, elemType int) (*Frame, error) {
 	}
 	return f, nil
 }
-

@@ -17,6 +17,9 @@ const (
 	KindInterp              // 插帧 / 慢放
 )
 
+// DefaultBlockOverlap 是模型未声明 blockOverlap 时的默认分块重叠。
+const DefaultBlockOverlap = 48
+
 // Param 描述一个可调参数在 params 张量中的位置与取值范围。
 type Param struct {
 	Key     string  // CLI 名（如 "denoise"）
@@ -28,14 +31,18 @@ type Param struct {
 
 // Model 是一个模型家族的静态描述。
 type Model struct {
-	Key      string // CLI 用的短名，如 "proteus"
-	Short    string // 文件名中的短码，如 "prob"
-	Version  string // 版本，如 "4"
-	Kind     Kind
-	Display  string
-	Scales   []int  // 支持的放大倍率；插帧模型为空
-	TileHW   [][2]int // 可用 tile 尺寸 (H,W)
-	Params   []Param // 可调参数（按张量顺序）
+	Key     string // CLI 用的短名，如 "proteus"
+	Short   string // 文件名中的短码，如 "prob"
+	Version string // 版本，如 "4"
+	Kind    Kind
+	Display string
+	Scales  []int    // 支持的放大倍率；插帧模型为空
+	TileHW  [][2]int // 可用 tile 尺寸 (W,H)
+	Params  []Param  // 可调参数（按张量顺序）
+	// 模型是否要求 keepColor 色彩校正（JSON keepColor）。
+	KeepColor bool
+	// 模型 JSON 的 blockOverlap；0 表示使用默认 48。
+	BlockOverlap int
 	// 文件名前缀，用于拼接 <prefix>-fp16-<H>x<W>[-<S>x]-ox.tz
 	FilePrefix string
 	// 是否在文件名中含 scale 段（增强模型含，插帧模型不含）
@@ -90,19 +97,19 @@ func Registry() map[string]*Model {
 			Key: "proteus", Short: "prob", Version: "4", Kind: KindEnhance,
 			Display: "Proteus", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: proteusParams(), FilePrefix: "prob-v4-fgnet", FileHasScale: true,
-			Temporal: 2, CenterIdx: 1,
+			Temporal: 2, CenterIdx: 1, KeepColor: true,
 		},
 		"gaia": {
 			Key: "gaia", Short: "ghq", Version: "5", Kind: KindEnhance,
 			Display: "Gaia (High Quality)", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: nil, FilePrefix: "ghq-v5-gaia", FileHasScale: true,
-			Temporal: 5, CenterIdx: 2,
+			Temporal: 5, CenterIdx: 2, KeepColor: true,
 		},
 		"gaia-cg": {
 			Key: "gaia-cg", Short: "gcg", Version: "5", Kind: KindEnhance,
 			Display: "Gaia (Computer Generated)", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: nil, FilePrefix: "gcg-v5-gaia", FileHasScale: true,
-			Temporal: 5, CenterIdx: 2,
+			Temporal: 5, CenterIdx: 2, KeepColor: true,
 		},
 		"apollo": {
 			Key: "apollo", Short: "apo", Version: "8", Kind: KindInterp,
@@ -114,7 +121,7 @@ func Registry() map[string]*Model {
 			Key: "aion", Short: "aion", Version: "1", Kind: KindInterp,
 			Display: "Aion", Scales: nil, TileHW: interpTiles,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
-			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz",
+			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz", BlockOverlap: 32,
 		},
 	}
 }
@@ -176,4 +183,12 @@ func (m *Model) HasParam(key string) bool {
 		}
 	}
 	return false
+}
+
+// BlockOverlapOrDefault 返回模型的分块重叠，未声明时使用默认值。
+func (m *Model) BlockOverlapOrDefault() int {
+	if m.BlockOverlap > 0 {
+		return m.BlockOverlap
+	}
+	return DefaultBlockOverlap
 }

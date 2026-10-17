@@ -17,22 +17,23 @@ import (
 
 // InterpJob 描述一次插帧/慢放任务。
 type InterpJob struct {
-	Input, Output string
-	Ffmpeg, Ffprobe string
-	ModelDir string
-	Model    *model.Model
-	Factor   int
-	RDT      float64 // 去重阈值（Sensitivity），<=0 关闭
-	Instances int    // 并发实例数
-	VramGB    float64 // 每会话显存上限(GB)
-	GPU      int
-	Threads  int
-	Overlap  int
-	WorkDir  string
+	Input, Output        string
+	Ffmpeg, Ffprobe      string
+	ModelDir             string
+	Model                *model.Model
+	Factor               int
+	RDT                  float64 // 原始去重阈值；<0 时使用 Sensitivity
+	Sensitivity          int     // Topaz Sensitivity 0-100，rdt=Sensitivity/1000
+	Instances            int     // 并发实例数
+	VramGB               float64 // 每会话显存上限(GB)
+	GPU                  int
+	Threads              int
+	Overlap              int
+	WorkDir              string
 	StartFrame, EndFrame int
-	Encode   encode.Options
-	AudioMode string
-	AudioBitrate int
+	Encode               encode.Options
+	AudioMode            string
+	AudioBitrate         int
 }
 
 // RunInterpolate 执行插帧/慢放主流程。
@@ -56,7 +57,7 @@ func RunInterpolate(job InterpJob) error {
 		if e < 0 {
 			e = info.Frames - 1
 		}
-		if e > info.Frames-1 {
+		if info.Frames > 0 && e > info.Frames-1 {
 			e = info.Frames - 1
 		}
 		if s <= e {
@@ -146,15 +147,17 @@ func RunInterpolate(job InterpJob) error {
 		return lastF
 	}
 
-	overlap := job.Overlap
-	if overlap <= 0 {
-		overlap = 16
-	}
+	overlap := r.Overlap()
 	rdt := job.RDT
+	if rdt < 0 {
+		rdt = float64(job.Sensitivity) / 1000
+	}
 	if rdt < 0 {
 		rdt = 0
 	}
-	var skipped int
+	if rdt > 0 {
+		log.Infof("重复帧替换阈值 rdt=%.4f", rdt)
+	}
 	// 验证 CUDA 推理是否产出有效值：部分模型（如 Apollo）在个别 GPU 上会
 	// 产出 NaN。若检测到则回退到 CPU（较慢但正确）。
 	if job.GPU != -1 {
@@ -180,69 +183,59 @@ func RunInterpolate(job InterpJob) error {
 		return nil
 	}
 
+	dupFrames := 0
 	if err := writeOrig(frameAt(0)); err != nil {
 		enc.Close()
 		return err
 	}
-	for j := 0; j < total-1; j++ {
-		window := []*Frame{frameAt(j - 1), frameAt(j), frameAt(j + 1), frameAt(j + 2)}
-		// rdt 去重：相邻帧几乎相同（静止）时直接复制，跳过推理。
-		skip := false
+	for u0 := 0; u0 < total-1; {
+		u1 := u0 + 1
 		if rdt > 0 {
-			if d := SceneDiff(frameAt(j), frameAt(j+1)); d < rdt {
-				skip = true
-				skipped += n - 1
+			for u1 < total-1 && SceneDiff(frameAt(u1-1), frameAt(u1)) < rdt {
+				u1++
 			}
 		}
-		if skip {
-			// 静止片段：用目标帧填充中间帧。
-			dup := frameAt(j + 1)
-			for k := 1; k < n; k++ {
-				if err := writeOrig(dup); err != nil {
-					enc.Close()
-					return err
-				}
+		gap := u1 - u0
+		if gap > 1 {
+			dupFrames += gap - 1
+		}
+		window := []*Frame{frameAt(u0 - 1), frameAt(u0), frameAt(u1), frameAt(u1 + 1)}
+		span := gap * n
+		for i := 1; i < span; i++ {
+			t := float64(i) / float64(span)
+			subIdx := min(max(int(math.Round(t*float64(subdiv)))-1, 0), subdiv-1)
+			interp, err := processInterpFrame(r, window, fw, fh, th, tw, subIdx, overlap)
+			if err != nil {
+				enc.Close()
+				return err
 			}
-		} else {
-			for k := 1; k < n; k++ {
-				t := float64(k) / float64(n)
-				subIdx := int(math.Round(t*float64(subdiv))) - 1
-				if subIdx < 0 {
-					subIdx = 0
-				}
-				if subIdx > subdiv-1 {
-					subIdx = subdiv - 1
-				}
-				interp, err := processInterpFrame(r, window, fw, fh, th, tw, subIdx, overlap)
-				if err != nil {
-					enc.Close()
-					return err
-				}
-				if err := writeOrig(interp); err != nil {
-					enc.Close()
-					return err
-				}
+			if err := writeOrig(interp); err != nil {
+				enc.Close()
+				return err
+			}
+			if frameIdx%20 == 0 {
+				log.Progress("插帧", frameIdx, outCount)
 			}
 		}
-		if err := writeOrig(frameAt(j + 1)); err != nil {
+		if err := writeOrig(frameAt(u1)); err != nil {
 			enc.Close()
 			return err
 		}
-		// 释放远离的缓存。
 		for idx := range cache {
-			if idx < j-1 {
+			if idx < u0 {
 				delete(cache, idx)
 			}
 		}
 		if frameIdx%20 == 0 {
 			log.Progress("插帧", frameIdx, outCount)
 		}
+		u0 = u1
 	}
 	log.ProgressDone()
 	wall := time.Since(startAll).Seconds()
 	log.Infof("耗时分解: 总 %.1fs, 模型推理 %.1fs (%.0f%%), 其余 %.1fs", wall, float64(r.inferNanos)/1e9, float64(r.inferNanos)/1e9/wall*100, wall-float64(r.inferNanos)/1e9)
-	if skipped > 0 {
-		log.Infof("rdt 去重跳过 %d/%d 插值帧 (%.0f%%)", skipped, outCount, float64(skipped)/float64(outCount)*100)
+	if dupFrames > 0 {
+		log.Infof("替换重复帧 %d 个 (rdt=%.4f)", dupFrames, rdt)
 	}
 	if err := enc.Close(); err != nil {
 		os.Remove(tmpVideo)
@@ -283,7 +276,7 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 	}
 	// 2. 提取所有 tile（每 tile 内部并行）。
 	tileWins := make([][]*Frame, np)
-	for i := 0; i < np; i++ {
+	for i := range np {
 		win := make([]*Frame, len(window))
 		for j, f := range window {
 			win[j] = f.ExtractTile(xs[i], ys[i], tw, th)
@@ -291,18 +284,12 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 		tileWins[i] = win
 	}
 	// 3. 分批 + 跨会话并发推理（保持 GPU 喂饱）。
-	nInst := len(r.pool)
-	if nInst < 1 {
-		nInst = 1
-	}
-	batchSize := 4
+	nInst := max(len(r.pool), 1)
+	batchSize := r.BatchLimit()
 	type batch struct{ idx []int }
 	var batches []batch
 	for s := 0; s < np; s += batchSize {
-		e := s + batchSize
-		if e > np {
-			e = np
-		}
+		e := min(s+batchSize, np)
 		idx := make([]int, 0, e-s)
 		for i := s; i < e; i++ {
 			idx = append(idx, i)
@@ -311,21 +298,16 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 	}
 	results := make([]*Frame, np)
 	sessCh := make(chan int, nInst)
-	for i := 0; i < nInst; i++ {
+	for i := range nInst {
 		sessCh <- i
 	}
 	batchCh := make(chan batch)
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var firstErr error
-	workers := nInst
-	if workers > len(batches) {
-		workers = len(batches)
-	}
-	for w := 0; w < workers; w++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	workers := min(nInst, len(batches))
+	for range workers {
+		wg.Go(func() {
 			for b := range batchCh {
 				si := <-sessCh
 				main := r.pool[si]
@@ -354,7 +336,7 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 					mu.Unlock()
 				}
 			}
-		}()
+		})
 	}
 	for _, b := range batches {
 		batchCh <- b
@@ -366,7 +348,7 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 	}
 	// 4. 融合（每 tile 内部并行）。
 	ramp := overlap
-	for i := 0; i < np; i++ {
+	for i := range np {
 		sub := results[i]
 		if sub == nil {
 			continue

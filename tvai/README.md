@@ -13,8 +13,14 @@ Topaz Video AI 的本地复刻 CLI。输入视频，用本地 GPU 对模型推�
 
 ### 模型
 
-- **超分/修复**：`proteus`（6 个可调参数）、`gaia`、`gaia-cg`（多帧时序，无参数），支持 1x/2x/4x
+- **超分/修复**：`proteus`（6 参数）、`gaia` / `gaia-cg`（5 帧时序，无参数）
 - **插帧/慢放**：`apollo`（8 子帧）、`aion`（16 子帧，两级结构），支持 2-16 倍
+
+| 模型 | 倍率 | 参数 |
+|---|---|---|
+| proteus | 1/2/4 | 6 |
+| gaia / gaia-cg | 1/2/4 | 无 |
+| apollo / aion | 插帧 | 无 |
 
 > 2/4/8/16 是 2 的幂，能精确对齐模型子帧；3/6/10/12 取最接近子帧（时间轴有轻微近似）。
 
@@ -22,7 +28,7 @@ Topaz Video AI 的本地复刻 CLI。输入视频，用本地 GPU 对模型推�
 
 1. **ffmpeg / ffprobe** —— 在 `PATH` 上，或用 `--ffmpeg`/`--ffprobe` 指定
 2. **onnxruntime.dll 1.31+** —— 放在可执行文件同目录的 `ort-dll/`，或用环境变量 `TVAI_ORT_DLL` 指定。需 onnxruntime-gpu（CUDA）版本
-3. **模型文件**（`.tz`）—— 用环境变量 `TVAI_MODEL_DIR` 指向 Topaz 的 models 目录，默认探测 `C:\zy\APP\Big_APPs\TopazVideoAI\models`
+3. **模型文件**（`.tz`）—— 用环境变量 `TVAI_MODEL_DIR` 指向 Topaz 的 **.tz 模型目录**，默认探测 `C:\zy\APP\Big_APPs\TopazVideoAI\models`。注意：Topaz 自己的 `TVAI_MODEL_DIR` 是元数据 JSON 目录，本工具的语义不同，见下表
 4. **CUDA + cuDNN 9** —— 在 `PATH` 上（GPU 推理）
 
 ## 构建
@@ -42,9 +48,11 @@ tvai upscale -i 输入.mp4 -o 输出.mp4 --model proteus --scale 2 \
 
 - `--model`：`proteus` | `gaia` | `gaia-cg`
 - `--scale`：`1`（修复）| `2` | `4`
-- 参数（仅 proteus 支持，取值 0-100，`--deblur` 为 -100~100）：
+- 参数（仅 proteus，取值 **-100~100**，默认 0）：
   - `--denoise` 降噪、`--detail` 恢复细节、`--dehalo` 去光晕
   - `--sharpen` 锐化、`--fix-compression` 修复压缩、`--deblur` 抗锯齿/去模糊
+- `--kcolor 1`：keepColor 色彩校正（默认开）
+- `--scene-threshold 6.5`：模型内部场景切换阈值（Topaz 常量）
 
 ### 慢放 / 插帧
 
@@ -54,6 +62,12 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 
 - `--model`：`apollo` | `aion`
 - `--factor`：慢放倍数 `2 3 4 6 8 10 12 16`
+- `--sensitivity 10`：重复帧替换灵敏度 0-100；`rdt = sensitivity/1000`，0 关闭
+- `--rdt -1`：原始 rdt 覆盖；-1 表示使用 `--sensitivity` 的映射
+
+重复帧替换的行为与 Topaz `tvai_fi` 一致：相邻源帧差异低于 `rdt` 时，不复制该重复帧，
+而是在前后两个非重复帧之间生成新的插值帧替换它；输出帧数/FPS 保持不变。
+Apollo 与 Aion 都支持该行为。
 
 ### 输出设置（两个命令通用）
 
@@ -74,10 +88,13 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 ```bash
 --gpu -2          # -2 自动 / -1 CPU / 0+ 设备号
 --threads 4       # 推理线程数
---instances 1     # 插值并发实例数（单 GPU 上 1 通常最优，多实例显存翻倍且吞吐增益有限）
---rdt 0.03        # 去重阈值 Sensitivity，相邻帧差异低于此值时复制跳过推理，0 关闭
---vram 2          # 每会话显存上限 GB（默认 2，防止无界增长吃满显存）
---overlap 16      # 分块重叠像素
+--instances 1     # 插值总会话数（本工具语义；Topaz 的 instances 是额外实例数）
+--sensitivity 10  # 重复帧替换灵敏度 0-100（rdt=sensitivity/1000，0 关闭）
+--rdt -1          # 原始 rdt 覆盖（-1=使用 --sensitivity）
+--vram 2          # 每会话显存上限 GB（本工具语义；Topaz 的 vram 是显存比例 0.1-1）
+--overlap 0       # 分块重叠，0=自动（增强/插帧 48，Aion 32）
+--kcolor 1        # keepColor 色彩校正 0/1
+--scene-threshold 6.5  # 场景切换阈值
 --start 0 --end 99  # 只处理指定帧范围
 --workdir <dir>   # 临时 ONNX 解包目录
 ```
@@ -86,7 +103,7 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 
 | 变量 | 说明 |
 |---|---|
-| `TVAI_MODEL_DIR` | `.tz` 模型目录 |
+| `TVAI_MODEL_DIR` | `.tz` 模型目录（本工具语义；Topaz 的 `TVAI_MODEL_DIR` 是元数据 JSON 目录） |
 | `TVAI_ORT_DLL` | onnxruntime.dll 路径 |
 | `TVAI_DEBUG=1` | 输出诊断信息 |
 
@@ -96,12 +113,21 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 - **`.tz` 解包**：`.tz` 是 ZipCrypto 加密的 ZIP，内含标准 ONNX。密码硬编码于 `aiengine.dll`，见 `internal/tz`。
 - **CUDA fp16 ReduceMean 溢出修复**：onnxruntime CUDA 上 fp16 大张量归约会累加溢出（超过 65504）导致 NaN。`internal/onnxpatch` 在模型加载时对每个输出为 fp16 的 ReduceMean 节点插入 `Cast(fp32) → ReduceMean → Cast(fp16)`，改用 fp32 累加。protobuf 级字段解析/重写，仅改节点列表其余原样保留。
 - **Aion 两级插帧**：Aion 需要 `in8x`（8 帧预测，尺寸为 tile/4）。先用底部模型 `aiob` 从 4 帧产出 8 帧，块平均降采样到 tile/4 后喂给 Aion。`in8x` 为零时输出亮度仅 71%，两级后 100%。
+- **分块选择**：固定块模型按 Topaz 的评分选块：
+  `n = ceil((W-o)/(Wc-o)) * ceil((H-o)/(Hc-o))`，
+  `score = n*0.05 + (n*Wc*Hc - W*H)/(W*H)`，取最小；允许候选块大于输入帧。
+  默认重叠为 48（Aion 32）。
+- **keepColor**：当模型 `keepColor=1` 且 `--kcolor 1` 时，在输出帧上做 Lab 均值/方差匹配到输入帧（Reinhard 色彩迁移）；Proteus/Gaia 启用。
+- **重复帧替换**：`--sensitivity` 映射到 `rdt`；相邻重复帧不复制，而是在前后非重复帧之间生成插值帧替换，保持输出帧数/FPS。
+- **场景切换**：`scene_change_threshold` 传入 6.5；模型内部用 fnet 光流幅度做软混合，外部不再按像素差重置 `hr_prev`。
 
 ## 已知限制
 
 - 插帧模型在部分 Blackwell GPU 上曾有 CUDA 兼容问题（fp16 ReduceMean 溢出），已通过 ONNX 补丁解决；若仍异常可 `--gpu -1` 退回 CPU（正确但慢）。
 - **Aion 大视频较慢**：Aion 是两级推理（aiob+aion），每帧 4K 约数十秒。当前实现 GPU 占用在 0-100% 间横跳（未做流水线重叠，GPU 约 40% 时间在空转等 CPU）。Topaz 靠流水线重叠 + TensorRT + Sensitivity 去重跳帧达到稳定 80% GPU，这些尚未复刻，见调查文档的性能分析。
-- `rdt` 与 `instances` 已实现；流水线重叠（解码‖推理‖编码）尚未做，GPU 仍有空转。
+- `rdt` / `sensitivity` 与 `instances` 已实现；流水线重叠（解码‖推理‖编码）尚未做，GPU 仍有空转。
 - Aion 按训练尺寸（32 的倍数）分块推理，实测小 tile 比大 tile 更快。
+- 重复帧替换的输出帧数/FPS 保持不变；Topaz 的实现在部分边界会少 1-3 帧，本工具不模拟该细节。
+- keepColor 是 Lab 均值/方差匹配的近似实现，与 Topaz 的像素差异约在 1 个 8bit 色阶量级。
 - 非 2 幂倍数（3/6/10/12）的时间位置为最近子帧近似。
 - Topaz 在 RTX 5090（cc 12.0）上因 TensorRT 后端不支持 Blackwell 而回退 onnxruntime，其速度来自软件优化（批处理/流/去重）而非 TRT，见调查文档。
