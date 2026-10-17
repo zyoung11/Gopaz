@@ -45,6 +45,24 @@ func RunUpscale(job UpscaleJob) error {
 	}
 	log.Infof("输入 %dx%d, %.3f fps, %d 帧", fw, fh, info.FPS, info.Frames)
 
+	fr := ResolveFrameRange(job.StartFrame, job.EndFrame, info.Frames)
+	rangeSpecified := job.StartFrame >= 0 || job.EndFrame >= 0
+	total := max(info.Frames, 0)
+	if rangeSpecified {
+		if fr.Count > 0 {
+			total = fr.Count
+		} else if info.Frames > 0 {
+			return fmt.Errorf("帧范围无效或超出视频长度")
+		} else if job.StartFrame >= 0 && job.EndFrame >= 0 {
+			return fmt.Errorf("帧范围无效")
+		} else {
+			total = 0
+		}
+	}
+	if rangeSpecified && total > 0 {
+		log.Infof("帧范围 %d-%d, 共 %d 帧", fr.Start, fr.End, total)
+	}
+
 	so := job.Model.Temporal
 	if so <= 0 {
 		so = 1
@@ -71,7 +89,7 @@ func RunUpscale(job UpscaleJob) error {
 	}
 	// 先编码到临时文件，再并入音频得到最终输出。
 	tmpVideo := TempVideoPath(job.Output)
-	dec, err := video.NewDecoder(job.Ffmpeg, job.Input, fw, fh, job.StartFrame, job.EndFrame)
+	dec, err := video.NewDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End)
 	if err != nil {
 		return err
 	}
@@ -91,7 +109,6 @@ func RunUpscale(job UpscaleJob) error {
 	ring := make([]*Frame, so)
 	var lastFrame *Frame
 	readPos, emitPos := 0, 0
-	total := max(info.Frames, 0)
 
 	frameIdx := 0
 	buf := make([]byte, fw*fh*3)

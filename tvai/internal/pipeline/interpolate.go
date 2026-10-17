@@ -47,31 +47,29 @@ func RunInterpolate(job InterpJob) error {
 	if fw <= 0 || fh <= 0 {
 		return fmt.Errorf("无法确定输入分辨率")
 	}
-	total := info.Frames
-	// 若指定帧范围，解码器会只选出范围内帧，需相应调整总帧数。
-	if job.StartFrame >= 0 || job.EndFrame >= 0 {
-		s, e := job.StartFrame, job.EndFrame
-		if s < 0 {
-			s = 0
-		}
-		if e < 0 {
-			e = info.Frames - 1
-		}
-		if info.Frames > 0 && e > info.Frames-1 {
-			e = info.Frames - 1
-		}
-		if s <= e {
-			total = e - s + 1
+	fr := ResolveFrameRange(job.StartFrame, job.EndFrame, info.Frames)
+	rangeSpecified := job.StartFrame >= 0 || job.EndFrame >= 0
+	total := max(info.Frames, 0)
+	if rangeSpecified {
+		if fr.Count > 0 {
+			total = fr.Count
+		} else if info.Frames > 0 {
+			return fmt.Errorf("帧范围无效或超出视频长度")
+		} else if job.StartFrame >= 0 && job.EndFrame >= 0 {
+			return fmt.Errorf("帧范围无效")
 		}
 	}
 	if total <= 0 {
-		return fmt.Errorf("无法确定输入帧数（容器未提供 nb_frames）")
+		return fmt.Errorf("无法确定输入帧数（容器未提供 nb_frames），请用 --end 指定范围")
 	}
 	n := job.Factor
 	if n < 2 {
 		return fmt.Errorf("慢放倍数需 >= 2")
 	}
 	log.Infof("输入 %dx%d, %.3f fps, %d 帧, 慢放 %dx", fw, fh, info.FPS, total, n)
+	if rangeSpecified {
+		log.Infof("帧范围 %d-%d, 共 %d 帧", fr.Start, fr.End, total)
+	}
 
 	// 插帧不改分辨率：scale 空间为 1，仅时间轴加密。
 	cfg := UpscaleConfig{
@@ -88,7 +86,7 @@ func RunInterpolate(job InterpJob) error {
 	subdiv := r.cfg.Model.OutFrames // Apollo=8, Aion=16
 	log.Infof("使用 tile %dx%d, 模型 %s, 每次推理产出 %d 子帧", th, tw, job.Model.Display, subdiv)
 
-	dec, err := video.NewDecoder(job.Ffmpeg, job.Input, fw, fh, job.StartFrame, job.EndFrame)
+	dec, err := video.NewDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End)
 	if err != nil {
 		return err
 	}

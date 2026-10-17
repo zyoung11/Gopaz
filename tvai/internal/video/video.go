@@ -72,18 +72,26 @@ type Decoder struct {
 }
 
 // NewDecoder 启动 ffmpeg 解码，输出 rawvideo rgb24 到 stdout 管道。
-// startFrame/endFrame < 0 表示不限制。
+// startFrame/endFrame 为 -1 表示该端不限制。
 func NewDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int) (*Decoder, error) {
-	var args []string
-	if startFrame >= 0 {
-		args = []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-			"-i", path,
-			"-vf", fmt.Sprintf("select='between(n\\,%d\\,%d)',scale=%d:%d:flags=bicubic", startFrame, endFrame, w, h),
-			"-vsync", "0"}
-	} else {
-		args = []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
-			"-i", path,
-			"-vf", fmt.Sprintf("scale=%d:%d:flags=bicubic", w, h)}
+	filter := fmt.Sprintf("scale=%d:%d:flags=bicubic", w, h)
+	selecting := false
+	switch {
+	case startFrame >= 0 && endFrame >= 0:
+		filter = fmt.Sprintf("select='between(n\\,%d\\,%d)',scale=%d:%d:flags=bicubic", startFrame, endFrame, w, h)
+		selecting = true
+	case startFrame >= 0:
+		filter = fmt.Sprintf("select='gte(n\\,%d)',scale=%d:%d:flags=bicubic", startFrame, w, h)
+		selecting = true
+	case endFrame >= 0:
+		filter = fmt.Sprintf("select='lte(n\\,%d)',scale=%d:%d:flags=bicubic", endFrame, w, h)
+		selecting = true
+	}
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+		"-i", path,
+		"-vf", filter}
+	if selecting {
+		args = append(args, "-vsync", "0")
 	}
 	args = append(args, "-f", "rawvideo", "-pix_fmt", "rgb24", "-")
 	cmd := exec.Command(ffmpeg, args...)
