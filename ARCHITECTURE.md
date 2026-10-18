@@ -19,7 +19,7 @@ Gopaz 用 Go 直接调用 onnxruntime C API，实现了其中 5 个模型：Prot
 ### 2.1 `.tz` 模型格式
 
 - Topaz 模型目录下 622 个 `.tz` 全部是标准 ZIP，每个包恰好一个条目，压缩方法为 deflate，通用标志的 bit0 为 1，即 ZipCrypto 加密，没有 AES。
-- 解包密码硬编码在 `aiengine.dll`，已在 `internal/tz` 中使用。
+- 解包密码硬编码在 `aiengine.dll`，已在 `tz.go` 中使用。
 - 解包后是标准 ONNX，可以直接交给 onnxruntime。
 - 模型按 `短名-版本` 分家族，文件名形如 `<prefix>-fp16-<H>x<W>-<scale>x-ox.tz`。注意 JSON 的 `blocks` 是 `[W, H]`，文件名是 `HxW`。
 - 增强模型每个家族有 9 个 block × 3 个 scale；Apollo 有 12 个块；Aion 和 aiob 是单文件动态尺寸。
@@ -113,19 +113,22 @@ Topaz 与 Gopaz 的 CLI 语义不同，不能直接对照：
 
 ## 3. 实现
 
-### 3.1 包结构
+### 3.1 源文件组织
 
-| 包 | 职责 |
+全部 Go 文件位于 `gopaz/` 根目录，同属 `package main`，按职责分文件：
+
+| 文件 | 职责 |
 |---|---|
-| `cmd/gopaz` | CLI 参数解析、依赖路径探测 |
-| `internal/ort` | 纯 Go 的 onnxruntime C API 绑定，50 个 `OrtApi` 偏移由官方头文件生成 |
-| `internal/tz` | ZipCrypto 解密与 deflate 解压 |
-| `internal/onnxpatch` | protobuf 级 ONNX 修改：fp16 ReduceMean 补丁、输出 fp16 化 |
-| `internal/model` | 模型元数据：文件名、tile 表、参数、时序帧数、keepColor |
-| `internal/pipeline` | 切块、推理、融合、插帧、色彩校正、三阶段流水线 |
-| `internal/encode` | 编码器注册表与 ffmpeg 参数构造 |
-| `internal/video` | ffmpeg / ffprobe 子进程封装 |
-| `internal/log` | 终端输出格式 |
+| `main.go` | CLI 参数解析、依赖路径探测 |
+| `ort.go` `offsets.go` | 纯 Go 的 onnxruntime C API 绑定，50 个 `OrtApi` 偏移由官方头文件生成 |
+| `tz.go` | ZipCrypto 解密与 deflate 解压 |
+| `onnxpatch.go` | protobuf 级 ONNX 修改：fp16 ReduceMean 补丁、输出 fp16 化 |
+| `model.go` | 模型元数据：文件名、tile 表、参数、时序帧数、keepColor |
+| `runner.go` `upscale.go` `interpolate.go` `interp_worker.go` | 切块、推理、融合、插帧、色彩校正 |
+| `audio.go` `stream.go` `frame.go` `tiling.go` `enhance_plan.go` `parallel.go` `f16.go` `gpu.go` `range.go` `color.go` `unsafe.go` | 管线辅助逻辑 |
+| `encode.go` | 编码器注册表与 ffmpeg 参数构造 |
+| `video.go` | ffmpeg / ffprobe 子进程封装 |
+| `log.go` | 终端输出格式 |
 
 ### 3.2 数据流
 
@@ -171,7 +174,7 @@ Aion 和 aiob 要求输入尺寸被 32 整除。
 
 Apollo / Aion / aiob 在 CUDA 上会输出全 NaN，根因是 fp16 `ReduceMean` 对大张量归约时累加器溢出：求和超过 65504 变成 Inf，再变 NaN。Apollo 有 40 个 ReduceMean，aiob 40 个，Aion 54 个，而 Proteus 只有 1 个，这解释了为什么超分正常、插帧全挂。
 
-`internal/onnxpatch` 在加载时对每个输出为 fp16 的 ReduceMean 插入：
+`onnxpatch.go` 在加载时对每个输出为 fp16 的 ReduceMean 插入：
 
 ```
 Cast(fp32) → ReduceMean → Cast(fp16)

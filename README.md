@@ -32,7 +32,7 @@ Apollo 单次推理产出 8 子帧，2/4/8 倍精确对齐；Aion 产出 16 子�
 ## 构建
 
 ```bash
-CGO_ENABLED=0 go build -ldflags="-s -w" -o gopaz.exe ./cmd/gopaz
+CGO_ENABLED=0 go build -ldflags="-s -w" -o gopaz.exe .
 ```
 
 ## 绿色便携版
@@ -131,14 +131,14 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 ## 测试
 
 ```bash
-go test ./...
+go test .
 ```
 
 端到端回归默认跳过，需要模型目录和 onnxruntime：
 
 ```bash
-GOPAZ_E2E=1 go test ./internal/pipeline -run E2E -v
-GOPAZ_E2E=1 GOPAZ_E2E_GPU=1 GOPAZ_E2E_AION=1 go test ./internal/pipeline -run TestE2EAionDuplicate -v
+GOPAZ_E2E=1 go test . -run E2E -v
+GOPAZ_E2E=1 GOPAZ_E2E_GPU=1 GOPAZ_E2E_AION=1 go test . -run TestE2EAionDuplicate -v
 ```
 
 ## 声明

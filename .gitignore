@@ -6,7 +6,6 @@ gopaz/gopaz.exe
 *.tz
 *.tvai-video.tmp
 *.rgb
-gopaz/cmd/tztest/
 node_modules/
 .DS_Store
 portable/
