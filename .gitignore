@@ -1,25 +1,12 @@
-# 分析产物（提取的模型、临时 ONNX、ortwheel 等，体积巨大）
 work/
-
-# 外部克隆的嵌套仓库
-rea/
-
-# 运行时依赖：onnxruntime 二进制（约 200MB，需自行放置，见文档附录 B）
-tvai/ort-dll/
-
-# 构建产物
-tvai/tvai.exe
+gopaz/ort-dll/
+gopaz/gopaz.exe
 *.exe
-
-# 模型缓存与临时文件
 *.onnx
 *.tz
 *.tvai-video.tmp
 *.rgb
-
-# 测试产物
-tvai/cmd/tztest/
-
-# 依赖与系统文件
+gopaz/cmd/tztest/
 node_modules/
 .DS_Store
+portable/
