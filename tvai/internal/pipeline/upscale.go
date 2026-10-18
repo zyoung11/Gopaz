@@ -3,6 +3,7 @@ package pipeline
 import (
 	"fmt"
 	"os"
+	"sync"
 
 	"tvai/internal/encode"
 	"tvai/internal/log"
@@ -20,6 +21,8 @@ type UpscaleJob struct {
 	Params          map[string]float64
 	GPU             int
 	Threads         int
+	Workers         int
+	VramGB          float64
 	Overlap         int
 	// KColor 为 true 时按模型 keepColor 做 Lab 色彩校正。
 	KColor bool
@@ -71,7 +74,7 @@ func RunUpscale(job UpscaleJob) error {
 		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
 		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
 		SceneThreshold: job.SceneThreshold,
-		GPU:            job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
+		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, WorkDir: job.WorkDir,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {
@@ -113,7 +116,6 @@ func RunUpscale(job UpscaleJob) error {
 	readPos, emitPos := 0, 0
 
 	frameIdx := 0
-	overlap := r.Overlap()
 	needTemporal := r.HasInput("hr_prev")
 
 	readMore := func() bool {
@@ -180,7 +182,7 @@ func RunUpscale(job UpscaleJob) error {
 		if needTemporal && r.prevHR == nil {
 			r.ResetTemporal(centerFrame.UpscaleBilinear(outW, outH))
 		}
-		rawFrame, err := processFrame(r, window, fw, fh, th, tw, job.Scale, overlap)
+		rawFrame, err := processFrame(r, window)
 		if err != nil {
 			writer.Close()
 			enc.Close()
@@ -231,48 +233,55 @@ func RunUpscale(job UpscaleJob) error {
 	return nil
 }
 
-// processFrame 对一帧完整处理：分块推理 + 重叠融合。
-func processFrame(r *Runner, window []*Frame, fw, fh, th, tw, scale, overlap int) (*Frame, error) {
-	center := r.cfg.Model.CenterIdx
-	if center >= len(window) {
-		center = len(window) - 1
+// processFrame 对一帧完整处理：并行分块推理 + 预计算权重融合。
+func processFrame(r *Runner, window []*Frame) (*Frame, error) {
+	p := r.enhPlan
+	if p == nil {
+		return nil, fmt.Errorf("增强计划未初始化")
 	}
-	// 输出画布与权重。
-	canvas := NewFrame(fw*scale, fh*scale)
-	weight := NewFrame(fw*scale, fh*scale)
-
-	stepX := tw - overlap
-	stepY := th - overlap
-	if stepX <= 0 {
-		stepX = tw
+	canvas := NewFrame(p.outW, p.outH)
+	nw := min(r.workers, len(p.pos))
+	if nw <= 0 {
+		return canvas, nil
 	}
-	if stepY <= 0 {
-		stepY = th
-	}
-
-	for y := 0; y < fh; y += stepY {
-		for x := 0; x < fw; x += stepX {
-			// 从窗口每帧提取同一位置 tile。
-			tiles := make([]*Frame, 0, len(window))
-			for _, f := range window {
-				tiles = append(tiles, f.ExtractTile(x, y, tw, th))
-			}
-			tileOut, err := r.ProcessTile(tiles, scale, x*scale, y*scale)
-			if err != nil {
-				return nil, err
-			}
-			ramp := overlap * scale
-			if ramp > tileOut.W {
-				ramp = tileOut.W / 4
-			}
-			if ramp > tileOut.H {
-				ramp = tileOut.H / 4
-			}
-			tileW := NewFrame(tileOut.W, tileOut.H)
-			FillRampWeight(tileW, ramp)
-			MergeTileWeighted(canvas, weight, tileOut, tileW, x*scale, y*scale)
+	tasks := make(chan tilePos)
+	var wg sync.WaitGroup
+	var mergeMu sync.Mutex
+	var errMu sync.Mutex
+	var firstErr error
+	setErr := func(err error) {
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
 		}
+		errMu.Unlock()
 	}
-	NormalizeCanvas(canvas, weight)
+	for range nw {
+		wg.Go(func() {
+			for tp := range tasks {
+				tiles := make([]*Frame, len(window))
+				for j, f := range window {
+					tiles[j] = f.ExtractTile(tp.x, tp.y, p.tw, p.th)
+				}
+				out, err := r.ProcessTile(tiles, p.scale, tp.x*p.scale, tp.y*p.scale)
+				if err != nil {
+					setErr(err)
+					continue
+				}
+				mergeMu.Lock()
+				addWeightedTile(canvas, out, p.weight, tp.x*p.scale, tp.y*p.scale)
+				mergeMu.Unlock()
+			}
+		})
+	}
+	for _, tp := range p.pos {
+		tasks <- tp
+	}
+	close(tasks)
+	wg.Wait()
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	normalizeCanvasInv(canvas, p.inv)
 	return canvas, nil
 }

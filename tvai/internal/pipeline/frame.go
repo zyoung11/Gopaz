@@ -87,41 +87,6 @@ func (f *Frame) ExtractTile(x, y, tw, th int) *Frame {
 	return t
 }
 
-// FillRampWeight 填充一个 tile 的融合权重图：边缘线性斜坡，内部 1。
-func FillRampWeight(w *Frame, ramp int) {
-	for j := 0; j < w.H; j++ {
-		for i := 0; i < w.W; i++ {
-			w.Data[j*w.W+i] = rampWeight(i, j, w.W, w.H, ramp)
-		}
-	}
-}
-
-// MergeTileWeighted 把放大后的 tile 按 tileW 权重累加进画布，
-// 同时把权重累加到全局权重图。
-func MergeTileWeighted(canvas, canvasW, tile, tileW *Frame, ox, oy int) {
-	parallelRows(tile.H, func(js, je int) {
-		for j := js; j < je; j++ {
-			dy := oy + j
-			if dy < 0 || dy >= canvas.H {
-				continue
-			}
-			for i := 0; i < tile.W; i++ {
-				dx := ox + i
-				if dx < 0 || dx >= canvas.W {
-					continue
-				}
-				ti := (j*tile.W + i) * 3
-				ci := (dy*canvas.W + dx) * 3
-				w := tileW.Data[j*tile.W+i]
-				canvas.Data[ci] += tile.Data[ti] * w
-				canvas.Data[ci+1] += tile.Data[ti+1] * w
-				canvas.Data[ci+2] += tile.Data[ti+2] * w
-				canvasW.Data[dy*canvasW.W+dx] += w
-			}
-		}
-	})
-}
-
 // rampWeight 计算一个 tile 内某像素的融合权重：边缘用线性斜坡过渡，内部为 1。
 // ramp 是斜坡宽度（输出空间像素数）。
 func rampWeight(i, j, w, h, ramp int) float32 {
@@ -141,23 +106,6 @@ func rampWeight(i, j, w, h, ramp int) float32 {
 		wy = float32(h-j) / float32(ramp+1)
 	}
 	return wx * wy
-}
-
-// NormalizeCanvas 用权重图归一化画布（就地）。
-func NormalizeCanvas(canvas, weight *Frame) {
-	parallelRows(canvas.H, func(s, e int) {
-		for p := s * canvas.W; p < e*canvas.W; p++ {
-			w := weight.Data[p]
-			if w <= 0 {
-				w = 1
-			}
-			inv := float32(1) / w
-			ci := p * 3
-			canvas.Data[ci] *= inv
-			canvas.Data[ci+1] *= inv
-			canvas.Data[ci+2] *= inv
-		}
-	})
 }
 
 // UpscaleBilinear 把帧双线性缩放到 nw x nh（用于初始化 hr_prev 等）。

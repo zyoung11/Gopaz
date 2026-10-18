@@ -53,6 +53,7 @@ type Runner struct {
 	pool          []*ort.Session
 	bottomPool    []*ort.Session
 	plan          *interpPlan
+	enhPlan       *enhancePlan
 	bottomOutType int
 	// 累计推理纳秒（诊断用）。
 	inferNanos int64
@@ -116,15 +117,11 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 	nWorkers := cfg.Workers
 	if nWorkers <= 0 {
-		if m.Kind == model.KindInterp {
-			nWorkers = 2
-			if cfg.GPU != -1 {
-				if free := detectFreeVRAMGB(cfg.GPU); free > 0 && free < 12 {
-					nWorkers = 1
-				}
+		nWorkers = 2
+		if cfg.GPU != -1 {
+			if free := detectFreeVRAMGB(cfg.GPU); free > 0 && free < 12 {
+				nWorkers = 1
 			}
-		} else {
-			nWorkers = 1
 		}
 	}
 	if nWorkers < 1 {
@@ -204,6 +201,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		if autoGB < 2.0 {
 			autoGB = 2.0
 		}
+		so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
+	} else if m.Kind == model.KindEnhance {
+		autoGB := clampFloat(float64(tw*th*cfg.Scale*cfg.Scale)/600000, 4.0, 12.0)
 		so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
 	}
 	if cfg.GPU >= 0 {
@@ -290,6 +290,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 	if m.Kind == model.KindInterp {
 		r.plan = newInterpPlan(cfg.FW, cfg.FH, tw, th, overlap, r.BatchLimit())
+	}
+	if m.Kind == model.KindEnhance {
+		r.enhPlan = newEnhancePlan(cfg.FW, cfg.FH, tw, th, cfg.Scale, overlap)
 	}
 	return r, nil
 }
@@ -481,7 +484,7 @@ func (r *Runner) runEnhance(tiles []*Frame, scale, ox, oy int) (*Frame, error) {
 
 	t1 := time.Now()
 	outs, err := r.sess.Run(inputNames, tensors, []string{r.outputName()})
-	r.inferNanos += time.Since(t1).Nanoseconds()
+	r.addInfer(time.Since(t1).Nanoseconds())
 	if err != nil {
 		return nil, err
 	}

@@ -53,6 +53,8 @@ tvai upscale -i 输入.mp4 -o 输出.mp4 --model proteus --scale 2 \
   - `--sharpen` 锐化、`--fix-compression` 修复压缩、`--deblur` 抗锯齿/去模糊
 - `--kcolor 1`：keepColor 色彩校正（默认开）
 - `--scene-threshold 6.5`：模型内部场景切换阈值（Topaz 常量）
+- `--workers 0`：tile 并行 worker 数；0=自动（默认 2，空闲显存 <12GB 时降为 1）
+- `--vram 0`：每会话显存上限 GB；0=按输出 tile 自动（2x 约 4GB）
 
 ### 慢放 / 插帧
 
@@ -65,7 +67,7 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 - `--sensitivity 10`：重复帧替换灵敏度 0-100；`rdt = sensitivity/1000`，0 关闭
 - `--rdt -1`：原始 rdt 覆盖；-1 表示使用 `--sensitivity` 的映射
 - `--instances 0`：插值并发会话数；0=自动（默认 1 个共享会话）
-- `--workers 0`：插值并行 worker 数；0=自动（默认 2，空闲显存 <12GB 时降为 1）。多个 worker 共享同一会话，显存不翻倍
+- `--workers 0`：插值/增强并行 worker 数；0=自动（默认 2，空闲显存 <12GB 时降为 1）。多个 worker 共享同一会话，显存不翻倍
 - `--gpu-vram 0`：Aion tile 预算 GB；0=约 2.4M 像素的整宽条带，显式值越小 tile 越小。增大 tile 时可能需要同时提高 `--vram`。
 - `--vram 0`：每会话显存上限 GB；0=按 tile 面积自动（4K 约 3.2GB）
 
@@ -93,7 +95,7 @@ tvai interpolate -i 输入.mp4 -o 输出.mp4 --model apollo --factor 4
 --gpu -2          # -2 自动 / -1 CPU / 0+ 设备号
 --threads 4       # 推理线程数
 --instances 0     # 插值并发会话数（0=自动，默认 1）
---workers 0       # 插值并行 worker 数（0=自动，默认 2，共享会话）
+--workers 0       # 插值/增强并行 worker 数（0=自动，默认 2，共享会话）
 --sensitivity 10  # 重复帧替换灵敏度 0-100（rdt=sensitivity/1000，0 关闭）
 --rdt -1          # 原始 rdt 覆盖（-1=使用 --sensitivity）
 --gpu-vram 0      # Aion tile 预算 GB（0=约 2.4M 像素；越小越省显存）
@@ -118,7 +120,7 @@ TVAI_E2E=1 go test ./internal/pipeline -run E2E -v
 TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE2EAionDuplicate -v
 ```
 
-- `TVAI_E2E=1` 运行 Proteus 帧范围/分块和 Apollo 重复帧替换
+- `TVAI_E2E=1` 运行 Proteus/Gaia/Gaia-CG 的帧范围/分块/输出尺寸和 Apollo 重复帧替换
 - `TVAI_E2E_GPU=1` 使用 GPU 0，否则走 CPU
 - `TVAI_E2E_AION=1` 额外运行 Aion 重复帧替换，需要 GPU
 - 缺少 ffmpeg/ffprobe、模型或 ORT 时测试自动 skip
@@ -136,6 +138,27 @@ TVAI_E2E=1 TVAI_E2E_GPU=1 TVAI_E2E_AION=1 go test ./internal/pipeline -run TestE
 Sensitivity 0（不替换重复帧）全片实测 1110s（18.5 分钟），GPU 约 92%，显存约 11.9GB；Sensitivity 65 为 1050s（17.5 分钟）。`test.mov` 本身没有被判定的重复帧，所以两者耗时接近；重复帧多的素材会更快。持续满载时笔记本 GPU 会降频，短片段折算会偏乐观。
 中间尝试过多会话方案（3 会话峰值约 22GB），最终改为 1 共享会话 + 2 worker，显存降到约 10GB。
 `--instances 2` 可再快约 5%，但显存接近翻倍；`--workers 1 --vram 2` 为低显存模式，4K 峰值约 7.8GB，速度约慢 5-10%。
+
+## 增强模型（Proteus / Gaia / Gaia-CG）
+
+三个增强模型的输入、时序和色彩细节已逐项验证，并改为共享会话 + tile 并行。
+
+| 模型 | 输入与细节 | 与 Topaz 的 PSNR |
+|---|---|---|
+| Proteus | `lr_prev` `lr_curr` `params` `hr_prev` `scene_change_threshold`，2 帧窗口，6 参数 | 46.9 dB |
+| Gaia | 5 帧时序输入，无参数，keepColor | 43.7 dB |
+| Gaia-CG | 5 帧时序输入，无参数，keepColor | 45.5 dB |
+
+PSNR 条件：720p 2x、30 帧、默认参数、kcolor=1，双方 FFV1 输出逐帧比较。
+
+短片段推理耗时，含模型加载和启动：
+
+| 模型 | 720p 2x 30 帧 | 1080p 2x 30 帧 |
+|---|---|---|
+| Proteus | 22s → **10s** | 24s（1 worker）→ **17s**（2 worker） |
+| Gaia | 24s → **13s** | **22s** |
+
+增强路径默认 2 个 worker 共享一个会话，预计算融合权重和归一化倒数图，按 tile 并行推理；`--workers` 可调整。
 
 ## 环境变量
 
@@ -157,6 +180,7 @@ Sensitivity 0（不替换重复帧）全片实测 1110s（18.5 分钟），GPU �
 - **CUDA EP 调优**：启用 `prefer_nhwc=1`（模型为 NHWC）和 `use_tf32=1`；推理输出在图层面改为 fp16，省一半输出带宽和显存，CPU 侧按 fp16 直接融合。
 - **按 tile 自动限显存**：每会话 `gpu_mem_limit` 按 tile 像素面积估算（4K 条带约 3.2GB），避免 ORT arena 无界增长；`--vram` 可覆盖。
 - **直接融合**：推理输出不拷贝成 `Frame`，而是按子帧通道直接从 ORT 张量视图加权累加进画布；融合权重和归一化倒数图在任务开始时预计算，归一化合入 RGB24 转换。
+- **增强模型 tile 并行**：Proteus/Gaia/Gaia-CG 使用预计算的 enhancePlan 权重和倒数图，同一会话由 2 个 worker 并行跑 tile；Proteus 的 hr_prev 仍按帧串行，保证时序反馈正确。
 - **三阶段流水线**：解码在独立 goroutine 中预读，编码在独立 goroutine 中完成 RGB24 转换和 ffmpeg 写入；通过有界 channel 与推理并行。
 - **keepColor**：当模型 `keepColor=1` 且 `--kcolor 1` 时，在输出帧上做 Lab 均值/方差匹配到输入帧（Reinhard 色彩迁移）；Proteus/Gaia 启用。
 - **重复帧替换**：`--sensitivity` 映射到 `rdt`；相邻重复帧不复制，而是在前后非重复帧之间生成插值帧替换，保持输出帧数/FPS。

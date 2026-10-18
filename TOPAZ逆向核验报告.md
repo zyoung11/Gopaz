@@ -603,6 +603,30 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 - Sensitivity 65 全片重跑 1047.7s（17.5 分钟），GPU 约 91%，显存约 10.5GB；
 - 旧的 438s/7.3 分钟性能数字作废。
 
+## 9.3 增强模型细节与推理效率（2026-10-18）
+
+三个增强模型（Proteus/Gaia/Gaia-CG）的输入、时序和色彩细节已逐项验证：
+
+- **Proteus**：输入 `lr_prev` `lr_curr` `params` `hr_prev` `scene_change_threshold`，2 帧窗口，6 参数；首帧 `hr_prev` 用双线性初始化，后续按帧串行反馈。
+- **Gaia / Gaia-CG**：5 帧时序输入 `VideoSR_Unet/inputFrame0..4:0`，无参数，keepColor 开启。
+- 与 Topaz 的逐帧 PSNR（720p 2x、30 帧、默认参数、kcolor=1，双方 FFV1 输出）：
+
+| 模型 | PSNR |
+|---|---|
+| Proteus | **46.9 dB** |
+| Gaia | **43.7 dB** |
+| Gaia-CG | **45.5 dB** |
+
+推理效率：
+
+- 新增 `enhancePlan`，任务开始时预计算 tile 位置、融合权重和归一化倒数图。
+- `processFrame` 改为共享会话的 worker 池并行跑 tile；Proteus 的 `hr_prev` 仍按帧串行，避免时序反馈错乱。
+- 720p 2x 30 帧：Proteus 22s → **10s**，Gaia 24s → **13s**。
+- 1080p 2x 30 帧：Proteus 24s（1 worker）→ **17s**（2 worker），Gaia **22s**。
+- 默认 2 个 worker；`--workers` 可调；每个会话 `gpu_mem_limit` 按输出 tile 面积自动设 4–12GB。
+- 并行融合与旧串行路径的 720p 输出 PSNR 约 51dB，差异来自浮点累加顺序，画面一致。
+- 新增 Gaia/Gaia-CG E2E，12 帧 2x 的帧数和输出尺寸通过；Proteus 1x/2x/4x E2E 全部通过。
+
 ## 10. TODO
 
 - [x] 修复 `upscale --start/--end` 的帧范围与输出长度
@@ -613,6 +637,11 @@ work/modelmeta/          68 个模型 JSON + 4 个非模型 JSON
 - [x] 插帧单次推理提取全部子帧
 - [x] Aion 显存与吞吐优化（单共享会话 + 条带切块 + fp16 输出）
 - [x] 重复帧判定与 Topaz 对齐（显著变化像素比例）
+- [x] Proteus/Gaia/Gaia-CG 输入与时序细节验证
+- [x] 增强模型共享会话与 tile 并行
+- [x] 增强模型预计算权重与直接融合
+- [ ] 增强模型 4K/4x 长片段基准
+- [ ] 自动参数估计 tvai_pe 集成
 - [ ] 重复帧替换与 Topaz 的像素级对比
 - [ ] 10bit/YUV 色彩管线与 keepColor 精确实现
 - [ ] 子帧顺序与时间戳验证

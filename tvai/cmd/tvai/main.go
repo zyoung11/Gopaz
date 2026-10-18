@@ -72,7 +72,7 @@ func usage() {
   --kcolor  keepColor 色彩校正 0/1 (默认 1)
   --scene-threshold 场景切换阈值 (默认 6.5)
   --instances 0 插值并发会话数 (0=自动，默认 1 个共享会话)
-  --workers 0   插值并行 worker 数 (0=自动，默认 2)
+  --workers 0   插值/增强并行 worker 数 (0=自动，默认 2)
   --gpu-vram 0  Aion tile 预算 GB (0=约 2.4M 像素；越小越省显存)
   --vram    每会话显存上限 GB (0=按 tile 自动)
   --start --end  处理帧范围
@@ -87,6 +87,8 @@ func cmdUpscale(args []string) error {
 	scale := fs.Int("scale", 1, "倍率 1/2/4")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
 	threads := fs.Int("threads", 0, "线程数")
+	workers := fs.Int("workers", 0, "并行 worker 数，0=自动")
+	vram := fs.Float64("vram", 0, "每会话显存上限 GB，0=自动")
 	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
 	kcolor := fs.Int("kcolor", 1, "keepColor 色彩校正 0/1")
 	sceneThreshold := fs.Float64("scene-threshold", 6.5, "场景切换阈值")
@@ -137,7 +139,7 @@ func cmdUpscale(args []string) error {
 	job := pipeline.UpscaleJob{
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
-		Params: params, GPU: *gpu, Threads: *threads, Overlap: *overlap,
+		Params: params, GPU: *gpu, Threads: *threads, Workers: *workers, VramGB: *vram, Overlap: *overlap,
 		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
 		WorkDir: *work, StartFrame: *start, EndFrame: *end,
 		Encode:    encode.Options{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},

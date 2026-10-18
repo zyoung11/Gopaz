@@ -223,6 +223,7 @@ func TestE2EProteusUpscale(t *testing.T) {
 		{"start", 1, 5, -1, 7, 320, 240},
 		{"end", 1, -1, 4, 5, 320, 240},
 		{"scale2", 2, 5, 9, 5, 640, 480},
+		{"scale4", 4, 5, 9, 5, 1280, 960},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -255,6 +256,30 @@ func TestE2EProteusTile(t *testing.T) {
 	if th != 384 || tw != 672 {
 		t.Fatalf("tile = %dx%d, want 384x672", th, tw)
 	}
+}
+
+// TestE2EGaiaUpscale 验证 Gaia 的 5 帧时序与输出尺寸。
+func TestE2EGaiaUpscale(t *testing.T) {
+	env := newE2E(t)
+	requireModel(t, env.modelDir, "ghq-v5-gaia-*.tz")
+	dir := t.TempDir()
+	src := makeClip(t, env.ffmpeg, dir, "src.mp4", 320, 240, 10, 12)
+	out := filepath.Join(dir, "gaia.mkv")
+	e2eUpscale(t, env, src, out, "gaia", 2, -1, -1)
+	assertFrames(t, env.ffprobe, out, 12)
+	assertSize(t, env.ffprobe, out, 640, 480)
+}
+
+// TestE2EGaiaCGUpscale 验证 Gaia-CG 的 5 帧时序与输出尺寸。
+func TestE2EGaiaCGUpscale(t *testing.T) {
+	env := newE2E(t)
+	requireModel(t, env.modelDir, "gcg-v5-gaia-*.tz")
+	dir := t.TempDir()
+	src := makeClip(t, env.ffmpeg, dir, "src.mp4", 320, 240, 10, 12)
+	out := filepath.Join(dir, "gaia-cg.mkv")
+	e2eUpscale(t, env, src, out, "gaia-cg", 2, -1, -1)
+	assertFrames(t, env.ffprobe, out, 12)
+	assertSize(t, env.ffprobe, out, 640, 480)
 }
 
 // TestE2EApolloDuplicate 验证 Apollo 的重复帧替换。
