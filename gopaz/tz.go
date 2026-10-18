@@ -51,7 +51,7 @@ func crc32Byte(crc uint32, b byte) uint32 {
 func Extract(data []byte, password string) ([]byte, error) {
 	eocd := findEOCD(data)
 	if eocd < 0 {
-		return nil, fmt.Errorf("tz: 未找到 ZIP 中央目录结尾")
+		return nil, fmt.Errorf("tz: ZIP end of central directory not found")
 	}
 	cdOffset := binary.LittleEndian.Uint32(data[eocd+16:])
 	cdSize := binary.LittleEndian.Uint32(data[eocd+12:])
@@ -59,10 +59,10 @@ func Extract(data []byte, password string) ([]byte, error) {
 
 	pos := int(cdOffset)
 	if int(pos)+46 > len(data) {
-		return nil, fmt.Errorf("tz: 中央目录偏移越界")
+		return nil, fmt.Errorf("tz: central directory offset out of bounds")
 	}
 	if binary.LittleEndian.Uint32(data[pos:]) != 0x02014b50 {
-		return nil, fmt.Errorf("tz: 中央目录签名错误")
+		return nil, fmt.Errorf("tz: bad central directory signature")
 	}
 	flags := binary.LittleEndian.Uint16(data[pos+8:])
 	method := binary.LittleEndian.Uint16(data[pos+10:])
@@ -72,7 +72,7 @@ func Extract(data []byte, password string) ([]byte, error) {
 
 	lp := int(localOffset)
 	if lp+30 > len(data) || binary.LittleEndian.Uint32(data[lp:]) != 0x04034b50 {
-		return nil, fmt.Errorf("tz: 本地文件头签名错误")
+		return nil, fmt.Errorf("tz: bad local file header signature")
 	}
 	lNameLen := binary.LittleEndian.Uint16(data[lp+26:])
 	lExtraLen := binary.LittleEndian.Uint16(data[lp+28:])
@@ -88,7 +88,7 @@ func Extract(data []byte, password string) ([]byte, error) {
 	var plain []byte
 	if encrypted {
 		if len(enc) < 12 {
-			return nil, fmt.Errorf("tz: 加密数据过短")
+			return nil, fmt.Errorf("tz: encrypted payload is too short")
 		}
 		var c zipCrypto
 		c.init([]byte(password))
@@ -117,11 +117,11 @@ func Extract(data []byte, password string) ([]byte, error) {
 		defer r.Close()
 		out, err := io.ReadAll(r)
 		if err != nil {
-			return nil, fmt.Errorf("tz: 解压 %s 失败: %w", name, err)
+			return nil, fmt.Errorf("tz: failed to decompress %s: %w", name, err)
 		}
 		return out, nil
 	default:
-		return nil, fmt.Errorf("tz: 不支持的压缩方法 %d", method)
+		return nil, fmt.Errorf("tz: unsupported compression method %d", method)
 	}
 }
 

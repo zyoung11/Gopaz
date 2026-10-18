@@ -38,9 +38,9 @@ func RunUpscale(job UpscaleJob) error {
 	}
 	fw, fh := info.Width, info.Height
 	if fw <= 0 || fh <= 0 {
-		return fmt.Errorf("无法确定输入分辨率")
+		return fmt.Errorf("cannot determine input resolution")
 	}
-	Infof("输入 %dx%d, %.3f fps, %d 帧", fw, fh, info.FPS, info.Frames)
+	Infof("Input %dx%d, %.3f fps, %d frames", fw, fh, info.FPS, info.Frames)
 
 	fr := ResolveFrameRange(job.StartFrame, job.EndFrame, info.Frames)
 	rangeSpecified := job.StartFrame >= 0 || job.EndFrame >= 0
@@ -49,15 +49,15 @@ func RunUpscale(job UpscaleJob) error {
 		if fr.Count > 0 {
 			total = fr.Count
 		} else if info.Frames > 0 {
-			return fmt.Errorf("帧范围无效或超出视频长度")
+			return fmt.Errorf("frame range is invalid or exceeds video length")
 		} else if job.StartFrame >= 0 && job.EndFrame >= 0 {
-			return fmt.Errorf("帧范围无效")
+			return fmt.Errorf("invalid frame range")
 		} else {
 			total = 0
 		}
 	}
 	if rangeSpecified && total > 0 {
-		Infof("帧范围 %d-%d, 共 %d 帧", fr.Start, fr.End, total)
+		Infof("Frame range %d-%d, %d frames", fr.Start, fr.End, total)
 	}
 
 	so := job.Model.Temporal
@@ -77,7 +77,7 @@ func RunUpscale(job UpscaleJob) error {
 	}
 	defer r.Close()
 	th, tw := r.TileSize()
-	Infof("使用 tile %dx%d, 模型 %s", th, tw, job.Model.Display)
+	Infof("Using tile %dx%d, model %s", th, tw, job.Model.Display)
 
 	outW, outH := fw*job.Scale, fh*job.Scale
 	encArgs, err := BuildArgs(job.Encode)
@@ -194,9 +194,9 @@ func RunUpscale(job UpscaleJob) error {
 		emitPos++
 		if frameIdx%10 == 0 {
 			if total > 0 {
-				Progress("超分", frameIdx, total)
+				Progress("Enhancing", frameIdx, total)
 			} else {
-				Progress("超分", frameIdx, -1)
+				Progress("Enhancing", frameIdx, -1)
 			}
 		}
 	}
@@ -204,25 +204,25 @@ func RunUpscale(job UpscaleJob) error {
 	if err := writer.Close(); err != nil {
 		enc.Close()
 		if se := enc.Stderr(); se != "" {
-			return fmt.Errorf("写入编码器失败: %w; ffmpeg: %s", err, se)
+			return fmt.Errorf("failed to write encoder: %w; ffmpeg: %s", err, se)
 		}
 		return err
 	}
 	if err := reader.Err(); err != nil {
 		enc.Close()
 		os.Remove(tmpVideo)
-		return fmt.Errorf("解码失败: %w", err)
+		return fmt.Errorf("decode failed: %w", err)
 	}
 	if err := enc.Close(); err != nil {
 		os.Remove(tmpVideo)
-		return fmt.Errorf("编码收尾失败: %w", err)
+		return fmt.Errorf("encoder finalization failed: %w", err)
 	}
 	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1); err != nil {
 		os.Remove(tmpVideo)
 		return err
 	}
 	os.Remove(tmpVideo)
-	Successf("完成: %s (%d 帧, %dx%d)", job.Output, frameIdx, outW, outH)
+	Successf("Done: %s (%d frames, %dx%d)", job.Output, frameIdx, outW, outH)
 	return nil
 }
 
@@ -231,7 +231,7 @@ func RunUpscale(job UpscaleJob) error {
 func processFrame(r *Runner, window []*Frame) (*Frame, error) {
 	p := r.enhPlan
 	if p == nil {
-		return nil, fmt.Errorf("增强计划未初始化")
+		return nil, fmt.Errorf("enhance plan is not initialized")
 	}
 	canvas := NewFrame(p.outW, p.outH)
 	nw := min(r.workers, len(p.pos))

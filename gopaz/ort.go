@@ -46,19 +46,19 @@ func Init(path string) error {
 		proc := dll.NewProc("OrtGetApiBase")
 		base, _, _ := proc.Call()
 		if base == 0 {
-			initErr = fmt.Errorf("OrtGetApiBase 返回 nil，无法加载 %s", path)
+			initErr = fmt.Errorf("OrtGetApiBase returned nil; cannot load %s", path)
 			return
 		}
 		getAPI := *(*uintptr)(unsafe.Pointer(base))
 		tab, _, _ := syscall.SyscallN(getAPI, 31)
 		if tab == 0 {
-			initErr = fmt.Errorf("GetApi(31) 返回 nil")
+			initErr = fmt.Errorf("GetApi(31) returned nil")
 			return
 		}
 		apiPtr = tab
 		var mi uintptr
 		if st := call(ortIdxCreateCpuMemoryInfo, 1, 0, uintptr(unsafe.Pointer(&mi))); st != 0 {
-			initErr = fmt.Errorf("CreateCpuMemoryInfo 失败")
+			initErr = fmt.Errorf("CreateCpuMemoryInfo failed")
 			return
 		}
 		cpuMemInfo = mi

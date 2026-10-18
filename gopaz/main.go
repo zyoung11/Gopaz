@@ -13,8 +13,11 @@ import (
 
 func main() {
 	if len(os.Args) < 2 {
-		usage()
-		os.Exit(2)
+		if err := cmdServe(nil); err != nil {
+			Error(err.Error())
+			os.Exit(1)
+		}
+		return
 	}
 	var err error
 	switch os.Args[1] {
@@ -22,6 +25,8 @@ func main() {
 		err = cmdUpscale(os.Args[2:])
 	case "interpolate":
 		err = cmdInterpolate(os.Args[2:])
+	case "serve":
+		err = cmdServe(os.Args[2:])
 	case "models":
 		cmdModels()
 	case "encoders":
@@ -29,7 +34,7 @@ func main() {
 	case "help", "-h", "--help":
 		usage()
 	default:
-		Errorf("未知子命令 %q", os.Args[1])
+		Errorf("unknown subcommand %q", os.Args[1])
 		usage()
 		os.Exit(2)
 	}
@@ -43,6 +48,8 @@ func usage() {
 	fmt.Println(`gopaz - Topaz Video AI 本地复刻 CLI
 
 用法:
+  gopaz              启动本地 Web 界面
+  gopaz serve        -port 8765 -no-open  仅启动 Web 界面
   gopaz upscale      -i <输入> -o <输出> --model <模型> --scale <1|2|4> [参数...]
   gopaz interpolate  -i <输入> -o <输出> --model <模型> --factor <N> [参数...]
   gopaz models       列出可用模型
@@ -108,17 +115,17 @@ func cmdUpscale(args []string) error {
 	fs.Parse(args)
 
 	if *in == "" || *out == "" {
-		return fmt.Errorf("必须指定 -i 和 -o")
+		return fmt.Errorf("-i and -o are required")
 	}
 	m, err := GetModel(*mk)
 	if err != nil {
 		return err
 	}
 	if m.Kind != KindEnhance {
-		return fmt.Errorf("模型 %s 不是超分模型", *mk)
+		return fmt.Errorf("model %s is not an enhancement model", *mk)
 	}
 	if !containsInt(m.Scales, *scale) {
-		return fmt.Errorf("模型 %s 不支持倍率 %d，可用 %v", *mk, *scale, m.Scales)
+		return fmt.Errorf("model %s does not support scale %d; available: %v", *mk, *scale, m.Scales)
 	}
 	ff, fp := resolveFfmpeg(*ffmpeg, *ffprobe)
 	params := map[string]float64{
@@ -171,14 +178,14 @@ func cmdInterpolate(args []string) error {
 	audioBitrate := fs.Int("audio-bitrate", 0, "音频码率 kbps")
 	fs.Parse(args)
 	if *in == "" || *out == "" {
-		return fmt.Errorf("必须指定 -i 和 -o")
+		return fmt.Errorf("-i and -o are required")
 	}
 	m, err := GetModel(*mk)
 	if err != nil {
 		return err
 	}
 	if m.Kind != KindInterp {
-		return fmt.Errorf("模型 %s 不是插帧模型", *mk)
+		return fmt.Errorf("model %s is not an interpolation model", *mk)
 	}
 	ff, fp := resolveFfmpeg(*ffmpeg, *ffprobe)
 	job := InterpJob{
@@ -223,7 +230,7 @@ func cmdModels() {
 }
 
 func cmdEncoders() {
-	fmt.Println("视频编码器 (encoder id → 说明):")
+	fmt.Println("Video encoders (id -> description):")
 	reg := EncoderRegistry()
 	for _, id := range EncoderIDs() {
 		e := reg[id]

@@ -183,7 +183,7 @@ type rawView struct {
 func tensorFloatsView(t *Tensor, n, elemType int) ([]float32, error) {
 	p := t.Data()
 	if p == nil {
-		return nil, fmt.Errorf("张量数据为空")
+		return nil, fmt.Errorf("tensor data is nil")
 	}
 	if elemType == Float16 {
 		src := unsafeSliceU16(p, n)
@@ -200,7 +200,7 @@ func tensorFloatsView(t *Tensor, n, elemType int) ([]float32, error) {
 func (r *Runner) outputView(t *Tensor, n int) (rawView, error) {
 	p := t.Data()
 	if p == nil {
-		return rawView{}, fmt.Errorf("张量数据为空")
+		return rawView{}, fmt.Errorf("tensor data is nil")
 	}
 	if r.outputType() == Float16 {
 		return rawView{f16: unsafeSliceU16(p, n)}, nil

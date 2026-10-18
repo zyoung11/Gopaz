@@ -30,7 +30,7 @@ func ProbeVideo(ffprobe, path string) (*VideoInfo, error) {
 		"-of", "default=noprint_wrappers=1", path)
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("ffprobe 失败: %w", err)
+		return nil, fmt.Errorf("ffprobe failed: %w", err)
 	}
 	info := &VideoInfo{FPS: 30}
 	for _, line := range splitLines(string(out)) {
@@ -99,7 +99,7 @@ func NewVideoDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int) (*
 	}
 	cmd.Stderr = nil
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("启动 ffmpeg 解码失败: %w", err)
+		return nil, fmt.Errorf("failed to start ffmpeg decoder: %w", err)
 	}
 	return &VideoDecoder{cmd: cmd, stdout: bufio.NewReaderSize(stdout, 1<<20)}, nil
 }
@@ -146,7 +146,7 @@ func NewVideoEncoder(ffmpeg, outPath string, w, h int, fps float64, extra []stri
 	var se bytes.Buffer
 	cmd.Stderr = &se
 	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("启动 ffmpeg 编码失败: %w", err)
+		return nil, fmt.Errorf("failed to start ffmpeg encoder: %w", err)
 	}
 	return &VideoEncoder{cmd: cmd, stdin: stdin, stderr: &se}, nil
 }
@@ -166,7 +166,7 @@ func (e *VideoEncoder) Stderr() string {
 func (e *VideoEncoder) Close() error {
 	e.stdin.Close()
 	if err := e.cmd.Wait(); err != nil {
-		return fmt.Errorf("ffmpeg 编码失败: %w, stderr: %s", err, strings.TrimSpace(e.stderr.String()))
+		return fmt.Errorf("ffmpeg encoding failed: %w, stderr: %s", err, strings.TrimSpace(e.stderr.String()))
 	}
 	return nil
 }

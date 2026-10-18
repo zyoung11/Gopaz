@@ -133,7 +133,7 @@ func ModelRegistry() map[string]*Model {
 func GetModel(key string) (*Model, error) {
 	m := ModelRegistry()[key]
 	if m == nil {
-		return nil, fmt.Errorf("未知模型 %q，可用: %s", key, strings.Join(ModelKeys(), ", "))
+		return nil, fmt.Errorf("unknown model %q, available: %s", key, strings.Join(ModelKeys(), ", "))
 	}
 	return m, nil
 }
@@ -161,7 +161,7 @@ func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale 
 	if single != "" {
 		p := filepath.Join(modelDir, single)
 		if _, err := os.Stat(p); err != nil {
-			return "", fmt.Errorf("模型文件缺失: %s", p)
+			return "", fmt.Errorf("model file missing: %s", p)
 		}
 		return p, nil
 	}
@@ -173,7 +173,7 @@ func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale 
 	}
 	p := filepath.Join(modelDir, name)
 	if _, err := os.Stat(p); err != nil {
-		return "", fmt.Errorf("模型文件缺失: %s", p)
+		return "", fmt.Errorf("model file missing: %s", p)
 	}
 	return p, nil
 }

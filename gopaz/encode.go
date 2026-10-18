@@ -68,17 +68,17 @@ func EncoderRegistry() map[string]*EncoderSpec {
 			Extensions: []string{"mov"},
 		},
 		"ffv1-10bit-444": {
-			ID: "ffv1-10bit-444", Desc: "FFV1 无损, 10bit 4:4:4",
+			ID: "ffv1-10bit-444", Desc: "FFV1 lossless, 10bit 4:4:4",
 			Base:       strings.Fields("-level 3 -c:v ffv1 -pix_fmt yuv444p10le -slices 4 -slicecrc 1 -g 1"),
 			Extensions: []string{"mkv", "mov", "avi"},
 		},
 		"ffv1-10bit-420": {
-			ID: "ffv1-10bit-420", Desc: "FFV1 无损, 10bit 4:2:0",
+			ID: "ffv1-10bit-420", Desc: "FFV1 lossless, 10bit 4:2:0",
 			Base:       strings.Fields("-level 3 -c:v ffv1 -pix_fmt yuv420p10le -slices 4 -slicecrc 1 -g 1"),
 			Extensions: []string{"mkv", "mov", "avi"},
 		},
 		"vp9-best": {
-			ID: "vp9-best", Desc: "VP9 best, 软编",
+			ID: "vp9-best", Desc: "VP9 best, software",
 			Base:       strings.Fields("-strict -2 -c:v libvpx-vp9 -pix_fmt yuv420p -row-mt 1 -deadline best"),
 			Extensions: []string{"mp4", "mkv", "webm"}, RateControl: true,
 		},
@@ -93,7 +93,7 @@ func GetEncoder(id string) (*EncoderSpec, error) {
 		for _, k := range EncoderIDs() {
 			ids = append(ids, k)
 		}
-		return nil, fmt.Errorf("未知编码器 %q，可用: %s", id, strings.Join(ids, ", "))
+		return nil, fmt.Errorf("unknown encoder %q, available: %s", id, strings.Join(ids, ", "))
 	}
 	return e, nil
 }
@@ -144,7 +144,7 @@ func BuildArgs(opt EncodeOptions) ([]string, error) {
 				var ok bool
 				qp, ok = e.CQP[q]
 				if !ok {
-					return nil, fmt.Errorf("编码器 %s 不支持质量档 %q（可用 High/Mid/Low）", e.ID, q)
+					return nil, fmt.Errorf("encoder %s does not support quality %q (use High/Mid/Low)", e.ID, q)
 				}
 			}
 			args = append(args, strings.Fields("-preset p7 -tune hq -rc constqp -rc-lookahead 20 -spatial_aq 1 -aq-strength 15 -b:v 0")...)
@@ -152,24 +152,24 @@ func BuildArgs(opt EncodeOptions) ([]string, error) {
 		}
 	case "cbr":
 		if !e.RateControl {
-			return nil, fmt.Errorf("编码器 %s 不支持 cbr", e.ID)
+			return nil, fmt.Errorf("encoder %s does not support cbr", e.ID)
 		}
 		if opt.Bitrate <= 0 {
-			return nil, fmt.Errorf("cbr 需要 --bitrate (Mbps)")
+			return nil, fmt.Errorf("cbr requires --bitrate (Mbps)")
 		}
 		args = append(args, strings.Fields("-rc cbr -preset p6")...)
 		args = append(args, "-b:v", fmt.Sprintf("%dM", opt.Bitrate))
 	case "vbr":
 		if !e.RateControl {
-			return nil, fmt.Errorf("编码器 %s 不支持 vbr", e.ID)
+			return nil, fmt.Errorf("encoder %s does not support vbr", e.ID)
 		}
 		if opt.Bitrate <= 0 {
-			return nil, fmt.Errorf("vbr 需要 --bitrate (Mbps)")
+			return nil, fmt.Errorf("vbr requires --bitrate (Mbps)")
 		}
 		args = append(args, strings.Fields("-preset p7 -tune hq -rc vbr -b:v 0")...)
 		args = append(args, "-cq", "19", "-maxrate", fmt.Sprintf("%dM", opt.Bitrate))
 	default:
-		return nil, fmt.Errorf("未知码率模式 %q（可用 cq/cbr/vbr）", rc)
+		return nil, fmt.Errorf("unknown rate control %q (use cq/cbr/vbr)", rc)
 	}
 	if len(e.Extensions) > 0 {
 		args = append(args, "-movflags", "+faststart")
@@ -199,6 +199,6 @@ func AudioCodec(mode string, bitrate int) ([]string, error) {
 	case "none":
 		return []string{"-an"}, nil
 	default:
-		return nil, fmt.Errorf("未知音频编码 %q（可用 copy/aac/ac3/pcm/vorbis/none）", mode)
+		return nil, fmt.Errorf("unknown audio codec %q (use copy/aac/ac3/pcm/vorbis/none)", mode)
 	}
 }

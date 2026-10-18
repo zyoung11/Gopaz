@@ -28,7 +28,7 @@ func MuxAudio(ffmpeg, videoOut, origIn, finalOut, audioMode string, audioBitrate
 	if audioMode == "none" {
 		if finalOut != videoOut {
 			if err := os.Rename(videoOut, finalOut); err != nil {
-				return fmt.Errorf("重命名输出失败: %w", err)
+				return fmt.Errorf("failed to rename output: %w", err)
 			}
 		}
 		return nil
@@ -42,7 +42,7 @@ func MuxAudio(ffmpeg, videoOut, origIn, finalOut, audioMode string, audioBitrate
 	}
 	if tempo != 1 && (audioMode == "" || audioMode == "copy") {
 		acodec, _ = AudioCodec("aac", audioBitrate)
-		Infof("慢放音频使用 AAC 并减速 %.3fx", 1/tempo)
+		Infof("slow-motion audio uses AAC at %.3fx", 1/tempo)
 	}
 	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
 		"-i", videoOut, "-i", origIn,
@@ -59,14 +59,14 @@ func MuxAudio(ffmpeg, videoOut, origIn, finalOut, audioMode string, audioBitrate
 	args = append(args, "-movflags", "+faststart", finalOut)
 	cmd := exec.Command(ffmpeg, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
-		Warnf("音频并轨失败，输出将不含音轨: %v", err)
-		Debugf("音频并轨 stderr: %s", string(out))
+		Warnf("audio mux failed, output will have no audio track: %v", err)
+		Debugf("audio mux stderr: %s", string(out))
 		if finalOut != videoOut {
 			if rerr := os.Rename(videoOut, finalOut); rerr == nil {
 				return nil
 			}
 		}
-		return fmt.Errorf("音频并轨失败: %w", err)
+		return fmt.Errorf("audio mux failed: %w", err)
 	}
 	if finalOut != videoOut {
 		os.Remove(videoOut)

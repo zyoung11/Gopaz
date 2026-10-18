@@ -1,6 +1,6 @@
 # Gopaz
 
-Topaz Video AI 的本地复刻 CLI：输入视频，用本地 GPU 推理，输出超分/修复或慢放/插帧后的视频。纯 Go 实现，**无 cgo、无 C 编译器、无 Python**。
+Topaz Video AI 的本地复刻工具：提供命令行和本地 Web 界面。输入视频，用本地 GPU 推理，输出超分/修复或慢放/插帧后的视频。纯 Go 实现，**无 cgo、无 C 编译器、无 Python**。
 
 逆向依据、实现细节、性能数据与已知限制见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
@@ -8,6 +8,8 @@ Topaz Video AI 的本地复刻 CLI：输入视频，用本地 GPU 推理，输�
 
 | 命令 | 说明 |
 |---|---|
+| `gopaz` | 启动本地 Web 界面并打开浏览器 |
+| `gopaz serve` | 只启动 Web 界面 |
 | `gopaz upscale` | 超分（2x/4x）或修复（1x） |
 | `gopaz interpolate` | 慢放/插帧（2-16 倍） |
 | `gopaz models` | 列出可用模型 |
@@ -32,8 +34,10 @@ Apollo 单次推理产出 8 子帧，2/4/8 倍精确对齐；Aion 产出 16 子�
 ## 构建
 
 ```bash
-CGO_ENABLED=0 go build -ldflags="-s -w" -o gopaz.exe .
+go build -ldflags="-s -w" -o gopaz.exe .
 ```
+
+Web 前端在 `web/`，通过 `//go:embed` 打包进可执行文件，不需要 Node 或构建步骤。
 
 ## 绿色便携版
 
@@ -59,7 +63,54 @@ gopaz-portable\
 - ORT：`GOPAZ_ORT_DLL` → exe 同目录 `ort-dll\` → 当前目录 `ort-dll\`
 - CUDA / cuDNN：exe 同目录 `runtime\`、`cuda\`、`cudnn\` 会自动加入 PATH
 
-## 用法
+## Web 界面
+
+```bash
+gopaz
+```
+
+不带参数启动时会监听 `http://127.0.0.1:8765` 并自动打开浏览器。端口被占用时自动顺延，也可以手动指定：
+
+```bash
+gopaz serve --port 9000 --no-open
+```
+
+使用方式：
+
+- 点击中间的「选择视频」按钮，通过 Windows 原生文件选择器（GO-WinFilePicker）导入，直接把本地路径交给程序，不复制视频
+- 也可以在路径框里粘贴完整路径后回车
+- 选择模型、倍率、参数和输出设置，选择输出文件夹
+- 点「开始处理」，底部显示进度、处理速度 fps、剩余时间、耗时和日志；可以取消当前任务
+- 输出文件名默认自动生成，也可以点击文件名输入框改成自定义名字；留空恢复自动命名
+- 界面默认英文，右上角可切换中文；只提供暗色主题
+
+自动命名与 Topaz 一致，只提供文件夹路径：
+
+```
+clip_prob4.mp4        Proteus 输出
+clip_ghq5.mp4         Gaia 输出
+clip_gcg5.mp4         Gaia-CG 输出
+clip_tvai.mp4         插帧输出
+clip_1_prob4.mp4      同名文件已存在时的第二个输出
+myvideo.mp4           自定义文件名
+```
+
+未指定输出文件夹时默认保存到输入视频所在目录。
+
+浏览器拖拽无法获取本地文件的绝对路径，这是浏览器安全限制，所以 Web 界面不提供拖拽导入，请使用选择按钮或路径输入框。
+
+### 播放与预览
+
+- 中间播放器直接播放输入视频，支持播放/暂停和拖拽进度条
+- 右侧模式切换为 Original / Processed；另有左右对比和分割对比，分割线可以左右拖动
+- Preview 按钮从当前播放位置开始处理 2 秒，输入不足 2 秒时处理剩余部分
+- 预览使用临时 H.264 MP4 以便浏览器播放，不改变最终输出编码设置
+- 预览区间会在原始进度条上高亮；对比模式下的进度条显示预览片段时间轴，并标注对应的源区间
+- 输入视频需要浏览器支持的编码；如果原视频无法播放，仍可以查看处理后的预览
+
+Web 界面一次只运行一个任务。CLI 的全部功能仍然可用。
+
+## CLI 用法
 
 ### 超分 / 修复
 
@@ -125,6 +176,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 | `GOPAZ_MODEL_DIR` | `.tz` 模型目录 |
 | `GOPAZ_ORT_DLL` | onnxruntime.dll 路径 |
 | `GOPAZ_DEBUG=1` | 输出诊断信息 |
+| `GOPAZ_PROGRESS=json` | 以 JSON 行输出日志和进度，供 Web 界面读取 |
 
 注意：Topaz 自己的 `TVAI_MODEL_DIR` 是元数据 JSON 目录，本工具的语义不同。
 

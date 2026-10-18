@@ -44,11 +44,11 @@ func initORT() error {
 	for _, c := range cands {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
 			if err := Init(c); err != nil {
-				return fmt.Errorf("初始化 onnxruntime (%s) 失败: %w", c, err)
+				return fmt.Errorf("failed to initialize onnxruntime (%s): %w", c, err)
 			}
 			Debugf("onnxruntime: %s", c)
 			return nil
 		}
 	}
-	return fmt.Errorf("找不到 onnxruntime.dll，可用 GOPAZ_ORT_DLL 指定（需 onnxruntime 1.31+）")
+	return fmt.Errorf("onnxruntime.dll not found; set GOPAZ_ORT_DLL (requires onnxruntime 1.31+)")
 }

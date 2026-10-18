@@ -45,7 +45,7 @@ func RunInterpolate(job InterpJob) error {
 	}
 	fw, fh := info.Width, info.Height
 	if fw <= 0 || fh <= 0 {
-		return fmt.Errorf("无法确定输入分辨率")
+		return fmt.Errorf("cannot determine input resolution")
 	}
 	fr := ResolveFrameRange(job.StartFrame, job.EndFrame, info.Frames)
 	rangeSpecified := job.StartFrame >= 0 || job.EndFrame >= 0
@@ -54,21 +54,21 @@ func RunInterpolate(job InterpJob) error {
 		if fr.Count > 0 {
 			total = fr.Count
 		} else if info.Frames > 0 {
-			return fmt.Errorf("帧范围无效或超出视频长度")
+			return fmt.Errorf("frame range is invalid or exceeds video length")
 		} else if job.StartFrame >= 0 && job.EndFrame >= 0 {
-			return fmt.Errorf("帧范围无效")
+			return fmt.Errorf("invalid frame range")
 		}
 	}
 	if total <= 0 {
-		return fmt.Errorf("无法确定输入帧数（容器未提供 nb_frames），请用 --end 指定范围")
+		return fmt.Errorf("cannot determine input frames because the container has no nb_frames; use --end")
 	}
 	n := job.Factor
 	if n < 2 {
-		return fmt.Errorf("慢放倍数需 >= 2")
+		return fmt.Errorf("slow motion factor must be at least 2")
 	}
-	Infof("输入 %dx%d, %.3f fps, %d 帧, 慢放 %dx", fw, fh, info.FPS, total, n)
+	Infof("Input %dx%d, %.3f fps, %d frames, %dx slow motion", fw, fh, info.FPS, total, n)
 	if rangeSpecified {
-		Infof("帧范围 %d-%d, 共 %d 帧", fr.Start, fr.End, total)
+		Infof("Frame range %d-%d, %d frames", fr.Start, fr.End, total)
 	}
 
 	cfg := UpscaleConfig{
@@ -87,15 +87,15 @@ func RunInterpolate(job InterpJob) error {
 	}()
 	plan := r.plan
 	if plan == nil {
-		return fmt.Errorf("插帧计划创建失败")
+		return fmt.Errorf("failed to create interpolation plan")
 	}
 	subdiv := r.cfg.Model.OutFrames
-	Infof("使用 tile %dx%d, %d 块/批 %d, 模型 %s, 每次推理产出 %d 子帧, 会话 %d, worker %d",
+	Infof("Using tile %dx%d, %d tiles/batch %d, model %s, %d subframes per inference, sessions %d, workers %d",
 		plan.tw, plan.th, len(plan.pos), plan.batch, job.Model.Display, subdiv, len(r.pool), r.workers)
 
 	if job.GPU != -1 {
 		if err := probeInterp(r); err != nil {
-			Warnf("CUDA 推理探测失败（%v），回退到 CPU", err)
+			Warnf("CUDA probe failed (%v), falling back to CPU", err)
 			r.Close()
 			r = nil
 			cfg.GPU = -1
@@ -107,7 +107,7 @@ func RunInterpolate(job InterpJob) error {
 			}
 			plan = r.plan
 			subdiv = r.cfg.Model.OutFrames
-			Infof("CPU 模式使用 tile %dx%d, %d 块/批 %d", plan.tw, plan.th, len(plan.pos), plan.batch)
+			Infof("CPU mode using tile %dx%d, %d tiles/batch %d", plan.tw, plan.th, len(plan.pos), plan.batch)
 		}
 	}
 
@@ -177,7 +177,7 @@ func RunInterpolate(job InterpJob) error {
 		rdt = 0
 	}
 	if rdt > 0 {
-		Infof("重复帧替换阈值 rdt=%.4f", rdt)
+		Infof("Duplicate frame threshold rdt=%.4f", rdt)
 	}
 	workers := make([]*interpWorker, r.workers)
 	for i := range workers {
@@ -222,7 +222,7 @@ func RunInterpolate(job InterpJob) error {
 			writer.WriteNorm(canvases[oi], plan.inv)
 			frameIdx++
 			if frameIdx%20 == 0 {
-				Progress("插帧", frameIdx, outCount)
+				Progress("Interpolating", frameIdx, outCount)
 			}
 		}
 		writeOrig(frameAt(u1))
@@ -232,7 +232,7 @@ func RunInterpolate(job InterpJob) error {
 			}
 		}
 		if frameIdx%20 == 0 {
-			Progress("插帧", frameIdx, outCount)
+			Progress("Interpolating", frameIdx, outCount)
 		}
 		u0 = u1
 	}
@@ -240,30 +240,30 @@ func RunInterpolate(job InterpJob) error {
 	if err := writer.Close(); err != nil {
 		enc.Close()
 		if se := enc.Stderr(); se != "" {
-			return fmt.Errorf("写入编码器失败: %w; ffmpeg: %s", err, se)
+			return fmt.Errorf("failed to write encoder: %w; ffmpeg: %s", err, se)
 		}
 		return err
 	}
 	if err := reader.Err(); err != nil {
 		enc.Close()
 		os.Remove(tmpVideo)
-		return fmt.Errorf("解码失败: %w", err)
+		return fmt.Errorf("decode failed: %w", err)
 	}
 	wall := time.Since(startAll).Seconds()
-	Infof("耗时分解: 总 %.1fs, 模型推理 %.1fs (%.0f%%), 其余 %.1fs", wall, float64(r.inferNanos)/1e9, float64(r.inferNanos)/1e9/wall*100, wall-float64(r.inferNanos)/1e9)
+	Infof("Timing: total %.1fs, inference %.1fs (%.0f%%), other %.1fs", wall, float64(r.inferNanos)/1e9, float64(r.inferNanos)/1e9/wall*100, wall-float64(r.inferNanos)/1e9)
 	if dupFrames > 0 {
-		Infof("替换重复帧 %d 个 (rdt=%.4f)", dupFrames, rdt)
+		Infof("Replaced %d duplicate frames (rdt=%.4f)", dupFrames, rdt)
 	}
 	if err := enc.Close(); err != nil {
 		os.Remove(tmpVideo)
-		return fmt.Errorf("编码收尾失败: %w", err)
+		return fmt.Errorf("encoder finalization failed: %w", err)
 	}
 	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1.0/float64(n)); err != nil {
 		os.Remove(tmpVideo)
 		return err
 	}
 	os.Remove(tmpVideo)
-	Successf("完成: %s (%d 帧, %.3f fps)", job.Output, frameIdx, outFPS)
+	Successf("Done: %s (%d frames, %.3f fps)", job.Output, frameIdx, outFPS)
 	return nil
 }
 
@@ -298,12 +298,12 @@ func probeInterp(r *Runner) error {
 	}
 	if view.f32 != nil {
 		if hasNaN(view.f32) {
-			return fmt.Errorf("推理输出包含 NaN")
+			return fmt.Errorf("inference output contains NaN")
 		}
 		return nil
 	}
 	if hasNaNF16(view.f16) {
-		return fmt.Errorf("推理输出包含 NaN")
+		return fmt.Errorf("inference output contains NaN")
 	}
 	return nil
 }

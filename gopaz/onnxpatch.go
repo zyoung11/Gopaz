@@ -44,13 +44,13 @@ func parseFields(b []byte) ([]pbField, error) {
 	for i < len(b) {
 		key, n := readVarint(b[i:])
 		if n == 0 {
-			return nil, errors.New("onnxpatch: varint 解析失败")
+			return nil, errors.New("onnxpatch: bad varint")
 		}
 		i += n
 		fn := int(key >> 3)
 		wt := int(key & 7)
 		if fn == 0 {
-			return nil, errors.New("onnxpatch: 字段号为 0")
+			return nil, errors.New("onnxpatch: field number is zero")
 		}
 		switch wt {
 		case 0:
@@ -59,32 +59,32 @@ func parseFields(b []byte) ([]pbField, error) {
 				i++
 			}
 			if i >= len(b) {
-				return nil, errors.New("onnxpatch: varint 越界")
+				return nil, errors.New("onnxpatch: varint out of bounds")
 			}
 			i++
 			out = append(out, pbField{fn, wt, b[st:i]})
 		case 1:
 			if i+8 > len(b) {
-				return nil, errors.New("onnxpatch: fixed64 越界")
+				return nil, errors.New("onnxpatch: fixed64 out of bounds")
 			}
 			out = append(out, pbField{fn, wt, b[i : i+8]})
 			i += 8
 		case 2:
 			l, n := readVarint(b[i:])
 			if n == 0 || i+n+int(l) > len(b) {
-				return nil, errors.New("onnxpatch: 长度域越界")
+				return nil, errors.New("onnxpatch: length-delimited field out of bounds")
 			}
 			i += n
 			out = append(out, pbField{fn, wt, b[i : i+int(l)]})
 			i += int(l)
 		case 5:
 			if i+4 > len(b) {
-				return nil, errors.New("onnxpatch: fixed32 越界")
+				return nil, errors.New("onnxpatch: fixed32 out of bounds")
 			}
 			out = append(out, pbField{fn, wt, b[i : i+4]})
 			i += 4
 		default:
-			return nil, fmt.Errorf("onnxpatch: 未知 wire type %d", wt)
+			return nil, fmt.Errorf("onnxpatch: unknown wire type %d", wt)
 		}
 	}
 	return out, nil
@@ -152,7 +152,7 @@ func PatchReduceMeanFp32(model []byte) ([]byte, bool, error) {
 		}
 	}
 	if gi < 0 {
-		return nil, false, errors.New("onnxpatch: 未找到 graph 字段")
+		return nil, false, errors.New("onnxpatch: graph field not found")
 	}
 	gf, err := parseFields(mf[gi].raw)
 	if err != nil {
@@ -264,7 +264,7 @@ func PatchOutputFp16(model []byte) ([]byte, bool, error) {
 		}
 	}
 	if gi < 0 {
-		return nil, false, errors.New("onnxpatch: 未找到 graph 字段")
+		return nil, false, errors.New("onnxpatch: graph field not found")
 	}
 	gf, err := parseFields(mf[gi].raw)
 	if err != nil {

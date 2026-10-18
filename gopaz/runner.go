@@ -155,19 +155,19 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 	onnxBytes, err := os.ReadFile(tzPath)
 	if err != nil {
-		return nil, fmt.Errorf("读取模型失败: %w", err)
+		return nil, fmt.Errorf("failed to read model: %w", err)
 	}
 	raw, err := Extract(onnxBytes, Password)
 	if err != nil {
-		return nil, fmt.Errorf("解包模型失败: %w", err)
+		return nil, fmt.Errorf("failed to unpack model: %w", err)
 	}
 	if patched, changed, perr := PatchReduceMeanFp32(raw); perr == nil && changed {
-		Debugf("已为 fp16 ReduceMean 插入 fp32 累加补丁")
+		Debugf("inserted fp32 accumulation patch for fp16 ReduceMean")
 		raw = patched
 	}
 	if m.Kind == KindInterp {
 		if patched, changed, perr := PatchOutputFp16(raw); perr == nil && changed {
-			Debugf("已把模型输出改为 fp16")
+			Debugf("converted model output to fp16")
 			raw = patched
 		}
 	}
@@ -177,14 +177,14 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	os.MkdirAll(cfg.WorkDir, 0o755)
 	onnxPath := filepath.Join(cfg.WorkDir, fmt.Sprintf("%s_%dx%d_%dx.onnx", m.Short, th, tw, cfg.Scale))
 	if err := os.WriteFile(onnxPath, raw, 0o644); err != nil {
-		return nil, fmt.Errorf("写出 ONNX 失败: %w", err)
+		return nil, fmt.Errorf("failed to write ONNX: %w", err)
 	}
 
 	var botPath string
 	if bp, _ := m.BottomTZPath(cfg.ModelDir); bp != "" {
 		botPath, err = prepareOnnx(bp, cfg.WorkDir, m.Short+"_bottom")
 		if err != nil {
-			return nil, fmt.Errorf("准备底部模型失败: %w", err)
+			return nil, fmt.Errorf("failed to prepare bottom model: %w", err)
 		}
 	}
 
@@ -256,7 +256,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 			for _, s := range pool {
 				s.Destroy()
 			}
-			return nil, fmt.Errorf("加载底部模型失败: %w", br.err)
+			return nil, fmt.Errorf("failed to load bottom model: %w", br.err)
 		}
 		bpool = br.pool
 	}
@@ -378,7 +378,7 @@ func (r *Runner) TileSize() (int, int) { return r.tileH, r.tileW }
 // upscaled tile. ox and oy are the tile coordinates on the output canvas.
 func (r *Runner) ProcessTile(tiles []*Frame, scale, ox, oy int) (*Frame, error) {
 	if r.cfg.Model.Kind != KindEnhance {
-		return nil, fmt.Errorf("ProcessTile 不支持该模型类别")
+		return nil, fmt.Errorf("ProcessTile does not support this model kind")
 	}
 	return r.runEnhance(tiles, scale, ox, oy)
 }
@@ -435,7 +435,7 @@ func (r *Runner) runEnhance(tiles []*Frame, scale, ox, oy int) (*Frame, error) {
 	switch m.Key {
 	case "gaia", "gaia-cg":
 		if len(tiles) < m.Temporal {
-			return nil, fmt.Errorf("%s 需要 %d 帧时序输入", m.Key, m.Temporal)
+			return nil, fmt.Errorf("%s requires %d temporal frames", m.Key, m.Temporal)
 		}
 		for j := 0; j < m.Temporal; j++ {
 			name := fmt.Sprintf("VideoSR_Unet/inputFrame%d:0", j)
@@ -488,7 +488,7 @@ func (r *Runner) runEnhance(tiles []*Frame, scale, ox, oy int) (*Frame, error) {
 		}
 	}
 	if len(inputNames) == 0 {
-		return nil, fmt.Errorf("模型 %s 的增强输入构造失败", m.Key)
+		return nil, fmt.Errorf("failed to build enhancement inputs for model %s", m.Key)
 	}
 
 	t1 := time.Now()
@@ -546,7 +546,7 @@ func (r *Runner) scalarTensor(v float64) (*Tensor, error) {
 func tensorToFrameTyped(t *Tensor, w, h int, elemType int) (*Frame, error) {
 	p := t.Data()
 	if p == nil {
-		return nil, fmt.Errorf("张量数据为空")
+		return nil, fmt.Errorf("tensor data is nil")
 	}
 	n := w * h * 3
 	f := &Frame{W: w, H: h, Data: make([]float32, n)}
