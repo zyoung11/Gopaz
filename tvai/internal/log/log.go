@@ -6,12 +6,12 @@ import (
 )
 
 const (
-	cReset  = "\x1b[0m"
-	cBlue   = "\x1b[38;2;138;173;244m"
-	cGreen  = "\x1b[38;2;166;218;149m"
-	cYellow = "\x1b[38;2;238;212;159m"
-	cRed    = "\x1b[38;2;237;135;150m"
-	cMauve  = "\x1b[38;2;198;160;246m"
+	cReset      = "\x1b[0m"
+	cBlue       = "\x1b[38;2;138;173;244m"
+	cGreen      = "\x1b[38;2;166;218;149m"
+	cYellow     = "\x1b[38;2;238;212;159m"
+	cRed        = "\x1b[38;2;237;135;150m"
+	cMauve      = "\x1b[38;2;198;160;246m"
 	cYellowName = "\x1b[38;2;238;212;159m"
 )
 
@@ -24,11 +24,11 @@ func wrap(code, s string) string {
 	return code + s + cReset
 }
 
-func Prompt(msg string)   { fmt.Println(wrap(cBlue, "[?] ") + msg) }
-func Info(msg string)     { fmt.Println(wrap(cBlue, "[i] ") + msg) }
-func Success(msg string)  { fmt.Println(wrap(cGreen, "[+] ") + msg) }
-func Warn(msg string)     { fmt.Println(wrap(cYellow, "[!] ") + msg) }
-func Error(msg string)    { fmt.Println(wrap(cRed, "[-] ") + msg) }
+func Prompt(msg string)  { fmt.Println(wrap(cBlue, "[?] ") + msg) }
+func Info(msg string)    { fmt.Println(wrap(cBlue, "[i] ") + msg) }
+func Success(msg string) { fmt.Println(wrap(cGreen, "[+] ") + msg) }
+func Warn(msg string)    { fmt.Println(wrap(cYellow, "[!] ") + msg) }
+func Error(msg string)   { fmt.Println(wrap(cRed, "[-] ") + msg) }
 
 func Infof(format string, a ...any)    { Info(fmt.Sprintf(format, a...)) }
 func Successf(format string, a ...any) { Success(fmt.Sprintf(format, a...)) }

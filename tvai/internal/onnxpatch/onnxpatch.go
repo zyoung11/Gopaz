@@ -262,6 +262,139 @@ func valueInfoNameType(vi []byte) (string, int, bool) {
 	return name, 0, false
 }
 
+// PatchOutputFp16 把图输出前的最后一个 Cast 改为 fp16，并同步输出类型。
+func PatchOutputFp16(model []byte) ([]byte, bool, error) {
+	mf, err := parseFields(model)
+	if err != nil {
+		return nil, false, err
+	}
+	gi := -1
+	for i, f := range mf {
+		if f.num == 7 && f.wire == 2 {
+			gi = i
+			break
+		}
+	}
+	if gi < 0 {
+		return nil, false, errors.New("onnxpatch: 未找到 graph 字段")
+	}
+	gf, err := parseFields(mf[gi].raw)
+	if err != nil {
+		return nil, false, err
+	}
+	nameType := make(map[string]int)
+	outputs := make(map[string]bool)
+	for _, f := range gf {
+		if f.num == 11 || f.num == 12 || f.num == 13 {
+			if nm, et, ok := valueInfoNameType(f.raw); ok {
+				nameType[nm] = et
+			}
+		}
+		if f.num == 12 && f.wire == 2 {
+			if nm, _, ok := valueInfoNameType(f.raw); ok {
+				outputs[nm] = true
+			}
+		}
+	}
+	changed := false
+	for i := range gf {
+		if gf[i].num != 1 || gf[i].wire != 2 {
+			continue
+		}
+		nf, err := parseFields(gf[i].raw)
+		if err != nil {
+			continue
+		}
+		op, _ := strField(nf, 4)
+		if op != "Cast" {
+			continue
+		}
+		out0, ok := strField(nf, 2)
+		if !ok || !outputs[out0] {
+			continue
+		}
+		in0, _ := strField(nf, 1)
+		if nameType[in0] != wdFloat16 {
+			continue
+		}
+		patched := false
+		for j := range nf {
+			if nf[j].num != 5 || nf[j].wire != 2 {
+				continue
+			}
+			af, err := parseFields(nf[j].raw)
+			if err != nil {
+				continue
+			}
+			if nm, _ := strField(af, 1); nm != "to" {
+				continue
+			}
+			for k := range af {
+				if af[k].num == 3 && af[k].wire == 0 && varintVal(af[k].raw) == wdFloat {
+					af[k].raw = appendVarint(nil, wdFloat16)
+					nf[j].raw = writeFields(af)
+					patched = true
+				}
+			}
+		}
+		if !patched {
+			continue
+		}
+		gf[i].raw = writeFields(nf)
+		changed = true
+	}
+	if !changed {
+		return nil, false, nil
+	}
+	for i := range gf {
+		if (gf[i].num != 12 && gf[i].num != 13) || gf[i].wire != 2 {
+			continue
+		}
+		vi, err := parseFields(gf[i].raw)
+		if err != nil {
+			continue
+		}
+		if nm, _, ok := valueInfoNameType(gf[i].raw); !ok || !outputs[nm] {
+			continue
+		}
+		if nvi, ok := setValueInfoElemType(vi, wdFloat16); ok {
+			gf[i].raw = writeFields(nvi)
+		}
+	}
+	mf[gi].raw = writeFields(gf)
+	return writeFields(mf), true, nil
+}
+
+func setValueInfoElemType(vi []pbField, et int) ([]pbField, bool) {
+	for i := range vi {
+		if vi[i].num != 2 || vi[i].wire != 2 {
+			continue
+		}
+		tf, err := parseFields(vi[i].raw)
+		if err != nil {
+			return vi, false
+		}
+		for j := range tf {
+			if tf[j].num != 1 || tf[j].wire != 2 {
+				continue
+			}
+			tt, err := parseFields(tf[j].raw)
+			if err != nil {
+				return vi, false
+			}
+			for k := range tt {
+				if tt[k].num == 1 && tt[k].wire == 0 {
+					tt[k].raw = appendVarint(nil, uint64(et))
+					tf[j].raw = writeFields(tt)
+					vi[i].raw = writeFields(tf)
+					return vi, true
+				}
+			}
+		}
+	}
+	return vi, false
+}
+
 // buildCastNode 构造一个 Cast 节点的 NodeProto 字节。
 func buildCastNode(in, out string, toType int) ([]byte, error) {
 	// AttributeProto: name(1)="to", i(3)=toType, type(20)=INT

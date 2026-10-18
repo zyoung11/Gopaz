@@ -222,7 +222,7 @@ func RunUpscale(job UpscaleJob) error {
 		os.Remove(tmpVideo)
 		return fmt.Errorf("编码收尾失败: %w", err)
 	}
-	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate); err != nil {
+	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1); err != nil {
 		os.Remove(tmpVideo)
 		return err
 	}

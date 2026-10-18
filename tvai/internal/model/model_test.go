@@ -28,8 +28,4 @@ func TestModelDefaults(t *testing.T) {
 	if got := Registry()["proteus"].BlockOverlapOrDefault(); got != 48 {
 		t.Fatalf("proteus overlap = %d, want 48", got)
 	}
-	aion := Registry()["aion"]
-	if aion.BaseGB != 1.2 || aion.PixelsPerGB != 120000 {
-		t.Fatalf("aion budget = %.1f/%.0f, want 1.2/120000", aion.BaseGB, aion.PixelsPerGB)
-	}
 }

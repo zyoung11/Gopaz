@@ -43,9 +43,6 @@ type Model struct {
 	KeepColor bool
 	// 模型 JSON 的 blockOverlap；0 表示使用默认 48。
 	BlockOverlap int
-	// 动态尺寸模型的显存预算参数，对应 JSON baseGB/pixelsPerGB。
-	BaseGB      float64
-	PixelsPerGB float64
 	// 文件名前缀，用于拼接 <prefix>-fp16-<H>x<W>[-<S>x]-ox.tz
 	FilePrefix string
 	// 是否在文件名中含 scale 段（增强模型含，插帧模型不含）
@@ -87,12 +84,6 @@ var apolloTiles = [][2]int{
 	{704, 1152}, {1056, 1088}, {1344, 1152},
 }
 
-// 插帧模型（Aion）的 tile 尺寸，均为 32 的倍数（模型内部约束）。实测小 tile（接近
-// 训练尺寸）比大 tile 更快，故以中小尺寸为主。元素为 {W, H}。
-var interpTiles = [][2]int{
-	{256, 256}, {384, 384}, {384, 480}, {480, 384}, {384, 576}, {576, 384}, {512, 512},
-}
-
 // Registry 返回全部可用模型家族，按 CLI Key 索引。
 func Registry() map[string]*Model {
 	return map[string]*Model{
@@ -122,10 +113,9 @@ func Registry() map[string]*Model {
 		},
 		"aion": {
 			Key: "aion", Short: "aion", Version: "1", Kind: KindInterp,
-			Display: "Aion", Scales: nil, TileHW: interpTiles,
+			Display: "Aion", Scales: nil,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
 			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz", BlockOverlap: 32,
-			BaseGB: 1.2, PixelsPerGB: 120000,
 		},
 	}
 }

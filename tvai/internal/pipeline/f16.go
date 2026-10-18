@@ -53,11 +53,13 @@ func f32SliceToF16(s []float32) []uint16 {
 	return out
 }
 
-// f16SliceToF32 把 []uint16（半精度位型）转为 []float32。
-func f16SliceToF32(s []uint16) []float32 {
-	out := make([]float32, len(s))
-	for i, v := range s {
-		out[i] = f16tof32(v)
+// hasNaNF16 判断半精度位型切片是否含 NaN。
+func hasNaNF16(s []uint16) bool {
+	for _, v := range s {
+		f := f16tof32(v)
+		if f != f {
+			return true
+		}
 	}
-	return out
+	return false
 }

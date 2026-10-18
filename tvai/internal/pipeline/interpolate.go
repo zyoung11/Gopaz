@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"sync"
 	"time"
@@ -23,9 +22,10 @@ type InterpJob struct {
 	Factor               int
 	RDT                  float64 // 原始去重阈值；<0 时使用 Sensitivity
 	Sensitivity          int     // Topaz Sensitivity 0-100，rdt=Sensitivity/1000
-	Instances            int     // 并发实例数
+	Instances            int     // 并发实例数，0=自动
+	Workers              int     // 并行 worker 数，0=自动
 	VramGB               float64 // 每会话显存上限(GB)
-	DeviceVRAMGB         float64 // 动态模型使用的总显存(GB)，0=自动检测
+	DeviceVRAMGB         float64 // Aion tile 预算(GB)，0=自动
 	GPU                  int
 	Threads              int
 	Overlap              int
@@ -71,20 +71,45 @@ func RunInterpolate(job InterpJob) error {
 		log.Infof("帧范围 %d-%d, 共 %d 帧", fr.Start, fr.End, total)
 	}
 
-	// 插帧不改分辨率：scale 空间为 1，仅时间轴加密。
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
 		FW: fw, FH: fh, Params: map[string]float64{}, Overlap: job.Overlap, Instances: job.Instances, VramGB: job.VramGB,
-		DeviceVRAMGB: job.DeviceVRAMGB, GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir,
+		DeviceVRAMGB: job.DeviceVRAMGB, GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir, Workers: job.Workers,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {
 		return err
 	}
-	defer func() { r.Close() }()
-	th, tw := r.TileSize()
-	subdiv := r.cfg.Model.OutFrames // Apollo=8, Aion=16
-	log.Infof("使用 tile %dx%d, 模型 %s, 每次推理产出 %d 子帧", th, tw, job.Model.Display, subdiv)
+	defer func() {
+		if r != nil {
+			r.Close()
+		}
+	}()
+	plan := r.plan
+	if plan == nil {
+		return fmt.Errorf("插帧计划创建失败")
+	}
+	subdiv := r.cfg.Model.OutFrames
+	log.Infof("使用 tile %dx%d, %d 块/批 %d, 模型 %s, 每次推理产出 %d 子帧, 会话 %d, worker %d",
+		plan.tw, plan.th, len(plan.pos), plan.batch, job.Model.Display, subdiv, len(r.pool), r.workers)
+
+	if job.GPU != -1 {
+		if err := probeInterp(r); err != nil {
+			log.Warnf("CUDA 推理探测失败（%v），回退到 CPU", err)
+			r.Close()
+			r = nil
+			cfg.GPU = -1
+			cfg.Instances = 1
+			cfg.Workers = 1
+			r, err = LoadRunner(cfg)
+			if err != nil {
+				return err
+			}
+			plan = r.plan
+			subdiv = r.cfg.Model.OutFrames
+			log.Infof("CPU 模式使用 tile %dx%d, %d 块/批 %d", plan.tw, plan.th, len(plan.pos), plan.batch)
+		}
+	}
 
 	dec, err := video.NewDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End)
 	if err != nil {
@@ -94,7 +119,7 @@ func RunInterpolate(job InterpJob) error {
 	reader := startFrameReader(dec, fw, fh, total)
 	defer reader.Stop()
 
-	outFPS := info.FPS * float64(n)
+	outFPS := info.FPS
 	encArgs, err := encode.BuildArgs(job.Encode)
 	if err != nil {
 		return err
@@ -105,7 +130,6 @@ func RunInterpolate(job InterpJob) error {
 		return err
 	}
 
-	// 帧缓存（带前瞻），支持 [j-1, j+2] 窗口。
 	cache := make(map[int]*Frame)
 	nextRead, eofAt := 0, -1
 	var lastF *Frame
@@ -145,7 +169,6 @@ func RunInterpolate(job InterpJob) error {
 		return NewFrame(fw, fh)
 	}
 
-	overlap := r.Overlap()
 	rdt := job.RDT
 	if rdt < 0 {
 		rdt = float64(job.Sensitivity) / 1000
@@ -156,21 +179,14 @@ func RunInterpolate(job InterpJob) error {
 	if rdt > 0 {
 		log.Infof("重复帧替换阈值 rdt=%.4f", rdt)
 	}
-	// 验证 CUDA 推理是否产出有效值：部分模型（如 Apollo）在个别 GPU 上会
-	// 产出 NaN。若检测到则回退到 CPU（较慢但正确）。
-	if job.GPU != -1 {
-		probeWin := []*Frame{frameAt(-1), frameAt(0), frameAt(1), frameAt(2)}
-		pf, perr := processInterpFrame(r, probeWin, fw, fh, th, tw, 0, overlap)
-		if perr != nil || (pf != nil && hasNaN(pf.Data)) {
-			log.Warnf("CUDA 推理不可用（%v），回退到 CPU", perr)
-			r.Close()
-			cfg.GPU = -1
-			r, err = LoadRunner(cfg)
-			if err != nil {
-				enc.Close()
-				return err
-			}
+	workers := make([]*interpWorker, r.workers)
+	for i := range workers {
+		si := i % len(r.pool)
+		var bot *ort.Session
+		if si < len(r.bottomPool) {
+			bot = r.bottomPool[si]
 		}
+		workers[i] = newInterpWorker(r, r.pool[si], bot, plan)
 	}
 	outCount := (total-1)*n + 1
 	frameIdx := 0
@@ -179,7 +195,6 @@ func RunInterpolate(job InterpJob) error {
 		writer.Write(f)
 		frameIdx++
 	}
-
 	dupFrames := 0
 	writeOrig(frameAt(0))
 	for u0 := 0; u0 < total-1; {
@@ -195,16 +210,17 @@ func RunInterpolate(job InterpJob) error {
 		}
 		window := []*Frame{frameAt(u0 - 1), frameAt(u0), frameAt(u1), frameAt(u1 + 1)}
 		span := gap * n
-		for i := 1; i < span; i++ {
-			t := float64(i) / float64(span)
-			subIdx := min(max(int(math.Round(t*float64(subdiv)))-1, 0), subdiv-1)
-			interp, err := processInterpFrame(r, window, fw, fh, th, tw, subIdx, overlap)
-			if err != nil {
-				writer.Close()
-				enc.Close()
-				return err
-			}
-			writeOrig(interp)
+		unique, order := plan.subFrames(span, subdiv)
+		canvases, err := processInterpInterval(r, workers, window, unique, plan)
+		if err != nil {
+			writer.Close()
+			enc.Close()
+			os.Remove(tmpVideo)
+			return err
+		}
+		for _, oi := range order {
+			writer.WriteNorm(canvases[oi], plan.inv)
+			frameIdx++
 			if frameIdx%20 == 0 {
 				log.Progress("插帧", frameIdx, outCount)
 			}
@@ -242,7 +258,7 @@ func RunInterpolate(job InterpJob) error {
 		os.Remove(tmpVideo)
 		return fmt.Errorf("编码收尾失败: %w", err)
 	}
-	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate); err != nil {
+	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1.0/float64(n)); err != nil {
 		os.Remove(tmpVideo)
 		return err
 	}
@@ -251,91 +267,100 @@ func RunInterpolate(job InterpJob) error {
 	return nil
 }
 
-// processInterpFrame 对一帧插值结果做分块推理 + 重叠融合。
-func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, overlap int) (*Frame, error) {
-	canvas := NewFrame(fw, fh)
-	weight := NewFrame(fw, fh)
-	stepX := tw - overlap
-	stepY := th - overlap
-	if stepX <= 0 {
-		stepX = tw
+// probeInterp 用一小块输入确认 CUDA 推理可用且不产生 NaN。
+func probeInterp(r *Runner) error {
+	plan := r.plan
+	if plan == nil {
+		return nil
 	}
-	if stepY <= 0 {
-		stepY = th
+	tiles := plan.pos
+	if r.cfg.Model.SingleFile != "" {
+		plan = newInterpPlan(128, 128, 128, 128, plan.ramp, 1)
+		tiles = plan.pos
+	} else if len(tiles) > 1 {
+		tiles = tiles[:1]
 	}
-	// 1. 收集 tile 位置。
-	var xs, ys []int
-	for y := 0; y < fh; y += stepY {
-		for x := 0; x < fw; x += stepX {
-			xs = append(xs, x)
-			ys = append(ys, y)
+	win := []*Frame{NewFrame(1, 1), NewFrame(1, 1), NewFrame(1, 1), NewFrame(1, 1)}
+	var bot *ort.Session
+	if len(r.bottomPool) > 0 {
+		bot = r.bottomPool[0]
+	}
+	w := newInterpWorker(r, r.pool[0], bot, plan)
+	out, err := w.run(win, tiles)
+	if err != nil {
+		return err
+	}
+	defer out.Destroy()
+	n := len(tiles) * plan.th * plan.tw * r.cfg.Model.OutFrames * 3
+	view, err := r.outputView(out, n)
+	if err != nil {
+		return err
+	}
+	if view.f32 != nil {
+		if hasNaN(view.f32) {
+			return fmt.Errorf("推理输出包含 NaN")
 		}
+		return nil
 	}
-	np := len(xs)
-	if np == 0 {
-		return canvas, nil
+	if hasNaNF16(view.f16) {
+		return fmt.Errorf("推理输出包含 NaN")
 	}
-	// 2. 提取所有 tile（每 tile 内部并行）。
-	tileWins := make([][]*Frame, np)
-	for i := range np {
-		win := make([]*Frame, len(window))
-		for j, f := range window {
-			win[j] = f.ExtractTile(xs[i], ys[i], tw, th)
-		}
-		tileWins[i] = win
+	return nil
+}
+
+// processInterpInterval 对一个慢放区间只做一轮推理，再把所有需要的子帧融合出来。
+func processInterpInterval(r *Runner, workers []*interpWorker, window []*Frame, unique []int, plan *interpPlan) ([]*Frame, error) {
+	canvases := make([]*Frame, len(unique))
+	for i := range canvases {
+		canvases[i] = NewFrame(plan.fw, plan.fh)
 	}
-	// 3. 分批 + 跨会话并发推理（保持 GPU 喂饱）。
-	nInst := max(len(r.pool), 1)
-	batchSize := r.BatchLimit()
-	type batch struct{ idx []int }
-	var batches []batch
-	for s := 0; s < np; s += batchSize {
-		e := min(s+batchSize, np)
-		idx := make([]int, 0, e-s)
-		for i := s; i < e; i++ {
-			idx = append(idx, i)
-		}
-		batches = append(batches, batch{idx})
+	if len(unique) == 0 || len(plan.pos) == 0 || len(workers) == 0 {
+		return canvases, nil
 	}
-	results := make([]*Frame, np)
-	sessCh := make(chan int, nInst)
-	for i := range nInst {
-		sessCh <- i
+	batches := make([][]tilePos, 0, (len(plan.pos)+plan.batch-1)/plan.batch)
+	for s := 0; s < len(plan.pos); s += plan.batch {
+		e := min(s+plan.batch, len(plan.pos))
+		batches = append(batches, plan.pos[s:e])
 	}
-	batchCh := make(chan batch)
+	nw := min(len(workers), len(batches))
+	batchCh := make(chan []tilePos)
 	var wg sync.WaitGroup
-	var mu sync.Mutex
+	var mergeMu sync.Mutex
+	var errMu sync.Mutex
 	var firstErr error
-	workers := min(nInst, len(batches))
-	for range workers {
+	setErr := func(err error) {
+		errMu.Lock()
+		if firstErr == nil {
+			firstErr = err
+		}
+		errMu.Unlock()
+	}
+	stride := r.cfg.Model.OutFrames * 3
+	for i := range nw {
+		w := workers[i]
 		wg.Go(func() {
 			for b := range batchCh {
-				si := <-sessCh
-				main := r.pool[si]
-				var bot *ort.Session
-				if si < len(r.bottomPool) {
-					bot = r.bottomPool[si]
-				}
-				tilesBatch := make([][]*Frame, len(b.idx))
-				for k, ti := range b.idx {
-					tilesBatch[k] = tileWins[ti]
-				}
-				raws, err := r.runInterpBatch(main, bot, tilesBatch)
-				sessCh <- si
+				out, err := w.run(window, b)
 				if err != nil {
-					mu.Lock()
-					if firstErr == nil {
-						firstErr = err
-					}
-					mu.Unlock()
+					setErr(err)
 					continue
 				}
-				for k, ti := range b.idx {
-					sub := ExtractSubFrame(raws[k], subIdx)
-					mu.Lock()
-					results[ti] = sub
-					mu.Unlock()
+				view, err := r.outputView(out, len(b)*plan.th*plan.tw*stride)
+				if err != nil {
+					out.Destroy()
+					setErr(err)
+					continue
 				}
+				mergeMu.Lock()
+				var mg sync.WaitGroup
+				for ui := range canvases {
+					mg.Go(func() {
+						mergeSubframe(canvases[ui], view, b, unique[ui], stride, plan)
+					})
+				}
+				mg.Wait()
+				mergeMu.Unlock()
+				out.Destroy()
 			}
 		})
 	}
@@ -344,27 +369,5 @@ func processInterpFrame(r *Runner, window []*Frame, fw, fh, th, tw, subIdx, over
 	}
 	close(batchCh)
 	wg.Wait()
-	if firstErr != nil {
-		return nil, firstErr
-	}
-	// 4. 融合（每 tile 内部并行）。
-	ramp := overlap
-	for i := range np {
-		sub := results[i]
-		if sub == nil {
-			continue
-		}
-		r := ramp
-		if r > sub.W {
-			r = sub.W / 4
-		}
-		if r > sub.H {
-			r = sub.H / 4
-		}
-		tileW := NewFrame(sub.W, sub.H)
-		FillRampWeight(tileW, r)
-		MergeTileWeighted(canvas, weight, sub, tileW, xs[i], ys[i])
-	}
-	NormalizeCanvas(canvas, weight)
-	return canvas, nil
+	return canvases, firstErr
 }

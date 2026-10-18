@@ -3,6 +3,7 @@ package pipeline
 
 import (
 	"math"
+	"runtime"
 )
 
 // Frame 是一帧 RGB，数据为 NHWC 布局的 [0,1] 浮点。
@@ -32,14 +33,29 @@ func (f *Frame) ToRGB24() []byte {
 	out := make([]byte, f.W*f.H*3)
 	parallelRows(f.W*f.H, func(s, e int) {
 		for i := s * 3; i < e*3; i++ {
-			v := f.Data[i]
-			if v < 0 {
-				v = 0
+			out[i] = toByte(f.Data[i])
+		}
+	})
+	return out
+}
+
+// ToRGB24Norm 先按 inv 归一化再转 RGB24，避免额外的归一化写回。
+func (f *Frame) ToRGB24Norm(inv []float32) []byte {
+	out := make([]byte, f.W*f.H*3)
+	parallelRows(f.H, func(s, e int) {
+		for y := s; y < e; y++ {
+			base := y * f.W
+			for x := 0; x < f.W; x++ {
+				p := base + x
+				w := inv[p]
+				if w <= 0 {
+					w = 1
+				}
+				i := p * 3
+				out[i] = toByte(f.Data[i] * w)
+				out[i+1] = toByte(f.Data[i+1] * w)
+				out[i+2] = toByte(f.Data[i+2] * w)
 			}
-			if v > 1 {
-				v = 1
-			}
-			out[i] = byte(v*255 + 0.5)
 		}
 	})
 	return out
@@ -129,20 +145,19 @@ func rampWeight(i, j, w, h, ramp int) float32 {
 
 // NormalizeCanvas 用权重图归一化画布（就地）。
 func NormalizeCanvas(canvas, weight *Frame) {
-	n := len(canvas.Data)
-	// RGB 交织，权重按像素存，需对每个通道除以同一权重。
-	for p := 0; p < canvas.W*canvas.H; p++ {
-		w := weight.Data[p]
-		if w <= 0 {
-			w = 1
+	parallelRows(canvas.H, func(s, e int) {
+		for p := s * canvas.W; p < e*canvas.W; p++ {
+			w := weight.Data[p]
+			if w <= 0 {
+				w = 1
+			}
+			inv := float32(1) / w
+			ci := p * 3
+			canvas.Data[ci] *= inv
+			canvas.Data[ci+1] *= inv
+			canvas.Data[ci+2] *= inv
 		}
-		inv := float32(1) / w
-		ci := p * 3
-		canvas.Data[ci] *= inv
-		canvas.Data[ci+1] *= inv
-		canvas.Data[ci+2] *= inv
-	}
-	_ = n
+	})
 }
 
 // UpscaleBilinear 把帧双线性缩放到 nw x nh（用于初始化 hr_prev 等）。
@@ -231,36 +246,6 @@ func chooseTile(candidates [][2]int, fw, fh, overlap int, penalty float64) (int,
 	return bestW, bestH
 }
 
-// chooseTileMax 在能完整放进帧的候选里选面积最大者（用于动态尺寸模型）。
-func chooseTileMax(candidates [][2]int, fw, fh int) (int, int) {
-	if len(candidates) == 0 {
-		return fw, fh
-	}
-	bestW, bestH := candidates[0][0], candidates[0][1]
-	bestArea := -1.0
-	anyFit := false
-	for _, c := range candidates {
-		tw, th := c[0], c[1]
-		area := float64(tw * th)
-		if tw <= fw && th <= fh {
-			anyFit = true
-			if area > bestArea {
-				bestArea = area
-				bestW, bestH = tw, th
-			}
-		}
-	}
-	if !anyFit {
-		for _, c := range candidates {
-			if a := float64(c[0] * c[1]); a > bestArea {
-				bestArea = a
-				bestW, bestH = c[0], c[1]
-			}
-		}
-	}
-	return bestW, bestH
-}
-
 func ceilDiv(a, b int) int {
 	if a <= 0 {
 		return 0
@@ -278,19 +263,42 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// SceneDiff 计算两帧的平均绝对差（用于场景切换检测）。
+// SceneDiff 计算两帧的平均绝对差（用于重复帧检测），按行并行。
 func SceneDiff(a, b *Frame) float64 {
 	if a.W != b.W || a.H != b.H {
 		return 1
 	}
-	var sum float64
-	n := len(a.Data)
-	for i := range n {
-		d := float64(a.Data[i]) - float64(b.Data[i])
-		if d < 0 {
-			d = -d
-		}
-		sum += d
+	n := a.H
+	if n <= 0 {
+		return 0
 	}
-	return sum / float64(n)
+	nw := max(min(runtime.NumCPU(), n), 1)
+	chunk := (n + nw - 1) / nw
+	parts := make([]float64, (n+chunk-1)/chunk)
+	parallelRows(n, func(s, e int) {
+		var local float64
+		for i := s * a.W * 3; i < e*a.W*3; i++ {
+			d := float64(a.Data[i]) - float64(b.Data[i])
+			if d < 0 {
+				d = -d
+			}
+			local += d
+		}
+		parts[s/chunk] = local
+	})
+	var sum float64
+	for _, v := range parts {
+		sum += v
+	}
+	return sum / float64(len(a.Data))
+}
+
+func toByte(v float32) byte {
+	if v < 0 {
+		v = 0
+	}
+	if v > 1 {
+		v = 1
+	}
+	return byte(v*255 + 0.5)
 }

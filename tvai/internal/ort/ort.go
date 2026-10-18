@@ -4,7 +4,9 @@ package ort
 
 import (
 	"fmt"
+	"maps"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"unicode/utf16"
@@ -33,8 +35,7 @@ var (
 	apiPtr     uintptr
 	initErr    error
 	dllPath    string
-	keepAlive  [][]byte
-	keepAliveW [][]uint16
+	cpuMemInfo uintptr
 )
 
 // Init 加载 onnxruntime 动态库并初始化全局 API 表。path 为 onnxruntime.dll 路径。
@@ -57,6 +58,12 @@ func Init(path string) error {
 			return
 		}
 		apiPtr = tab
+		var mi uintptr
+		if st := call(ortIdxCreateCpuMemoryInfo, 1, 0, uintptr(unsafe.Pointer(&mi))); st != 0 {
+			initErr = fmt.Errorf("CreateCpuMemoryInfo 失败")
+			return
+		}
+		cpuMemInfo = mi
 	})
 	return initErr
 }
@@ -96,14 +103,12 @@ func byteStr(p uintptr) string {
 
 func cstr(s string) *byte {
 	b := append([]byte(s), 0)
-	keepAlive = append(keepAlive, b)
 	return &b[0]
 }
 
 func wstr(s string) *uint16 {
 	u := utf16.Encode([]rune(s))
 	u = append(u, 0)
-	keepAliveW = append(keepAliveW, u)
 	return &u[0]
 }
 
@@ -127,6 +132,66 @@ func (e *Env) Destroy() {
 	}
 }
 
+// appendCUDA 追加 CUDA 执行提供器，ProviderOpts 非空时走 V2 接口。
+func appendCUDA(so uintptr, opt SessionOptions) error {
+	if opt.ProviderOpts == nil {
+		opts := make([]byte, 72)
+		*(*int32)(unsafe.Pointer(&opts[0])) = int32(opt.CUDADeviceID)
+		*(*int32)(unsafe.Pointer(&opts[4])) = int32(opt.CUDNNAlgo)
+		*(*uint64)(unsafe.Pointer(&opts[8])) = opt.GPUMemLimit
+		doCopy := int32(0)
+		if opt.CopyDefaultStream {
+			doCopy = 1
+		}
+		*(*int32)(unsafe.Pointer(&opts[20])) = doCopy
+		return check(call(ortIdxSessionOptionsAppendExecutionProvider_CUDA, so, uintptr(unsafe.Pointer(&opts[0]))), "AppendCUDA")
+	}
+	var provider uintptr
+	if err := check(call(ortIdxCreateCUDAProviderOptions, uintptr(unsafe.Pointer(&provider))), "CreateCUDAProviderOptions"); err != nil {
+		return err
+	}
+	defer call(ortIdxReleaseCUDAProviderOptions, provider)
+	algo := "EXHAUSTIVE"
+	switch opt.CUDNNAlgo {
+	case 1:
+		algo = "HEURISTIC"
+	case 2:
+		algo = "DEFAULT"
+	}
+	doCopy := "0"
+	if opt.CopyDefaultStream {
+		doCopy = "1"
+	}
+	vals := map[string]string{
+		"device_id":                 strconv.Itoa(opt.CUDADeviceID),
+		"gpu_mem_limit":             strconv.FormatUint(opt.GPUMemLimit, 10),
+		"cudnn_conv_algo_search":    algo,
+		"do_copy_in_default_stream": doCopy,
+	}
+	maps.Copy(vals, opt.ProviderOpts)
+	n := len(vals)
+	keys := make([]*byte, 0, n)
+	values := make([]*byte, 0, n)
+	keyPtrs := make([]uintptr, 0, n)
+	valPtrs := make([]uintptr, 0, n)
+	for k, v := range vals {
+		kp := cstr(k)
+		vp := cstr(v)
+		keys = append(keys, kp)
+		values = append(values, vp)
+		keyPtrs = append(keyPtrs, uintptr(unsafe.Pointer(kp)))
+		valPtrs = append(valPtrs, uintptr(unsafe.Pointer(vp)))
+	}
+	st := call(ortIdxUpdateCUDAProviderOptions, provider,
+		uintptr(unsafe.Pointer(&keyPtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(n))
+	runtime.KeepAlive(keys)
+	runtime.KeepAlive(values)
+	if err := check(st, "UpdateCUDAProviderOptions"); err != nil {
+		return err
+	}
+	return check(call(ortIdxSessionOptionsAppendExecutionProvider_CUDA_V2, so, provider), "AppendCUDAV2")
+}
+
 // Session 表示一个已加载的模型会话。
 type Session struct {
 	ptr uintptr
@@ -143,6 +208,8 @@ type SessionOptions struct {
 	// CUDNNAlgo: 0=Exhaustive(默认), 1=Heuristic, 2=Default。某些模型在
 	// Blackwell 上 exhaustive 选出的算法会产出 NaN，此时可调为 1 或 2。
 	CUDNNAlgo int
+	// ProviderOpts 通过 CUDA EP V2 接口追加或覆盖 provider 选项。
+	ProviderOpts map[string]string
 }
 
 // DefaultSessionOptions 返回默认配置：CUDA 开启，全部图优化。
@@ -170,23 +237,16 @@ func NewSession(env *Env, modelPath string, opt SessionOptions) (*Session, error
 	call(ortIdxSetSessionGraphOptimizationLevel, so, uintptr(opt.GraphOptLevel))
 
 	if opt.CUDA {
-		// OrtCUDAProviderOptions 的 x64 布局（见 onnxruntime_c_api.h）。
-		opts := make([]byte, 64)
-		*(*int32)(unsafe.Pointer(&opts[0])) = int32(opt.CUDADeviceID)
-		*(*int32)(unsafe.Pointer(&opts[4])) = int32(opt.CUDNNAlgo)
-		*(*uint64)(unsafe.Pointer(&opts[8])) = opt.GPUMemLimit
-		doCopy := int32(0)
-		if opt.CopyDefaultStream {
-			doCopy = 1
-		}
-		*(*int32)(unsafe.Pointer(&opts[20])) = doCopy
-		if err := check(call(ortIdxSessionOptionsAppendExecutionProvider_CUDA, so, uintptr(unsafe.Pointer(&opts[0]))), "AppendCUDA"); err != nil {
+		if err := appendCUDA(so, opt); err != nil {
 			return nil, err
 		}
 	}
 
 	var p uintptr
-	if err := check(call(ortIdxCreateSession, uintptr(unsafe.Pointer(env.ptr)), uintptr(unsafe.Pointer(wstr(modelPath))), so, uintptr(unsafe.Pointer(&p))), "CreateSession"); err != nil {
+	pathPtr := wstr(modelPath)
+	st := call(ortIdxCreateSession, uintptr(unsafe.Pointer(env.ptr)), uintptr(unsafe.Pointer(pathPtr)), so, uintptr(unsafe.Pointer(&p)))
+	runtime.KeepAlive(pathPtr)
+	if err := check(st, "CreateSession"); err != nil {
 		return nil, err
 	}
 	return &Session{ptr: p}, nil
@@ -268,7 +328,10 @@ func (s *Session) ioMeta(input bool) ([]IOInfo, error) {
 }
 
 // Tensor 是一个 ORT 张量值。
-type Tensor struct{ ptr uintptr }
+type Tensor struct {
+	ptr uintptr
+	ref any
+}
 
 // NewTensor 创建一个 ORT 自有内存的张量并填入数据。data 会被拷贝。
 func NewTensor(dims []int64, elemType int, data unsafe.Pointer, nElems int) (*Tensor, error) {
@@ -295,6 +358,20 @@ func NewTensor(dims []int64, elemType int, data unsafe.Pointer, nElems int) (*Te
 	return t, nil
 }
 
+// NewTensorRef 用调用方提供的内存创建张量，不拷贝数据。
+// ref 用于保持 data 的生命周期，必须在张量使用期间有效。
+func NewTensorRef(dims []int64, elemType int, data unsafe.Pointer, nElems int, ref any) (*Tensor, error) {
+	var p uintptr
+	dimPtr := uintptr(unsafe.Pointer(&dims[0]))
+	st := call(ortIdxCreateTensorWithDataAsOrtValue, cpuMemInfo, uintptr(data),
+		uintptr(nElems*elemSize(elemType)), dimPtr, uintptr(len(dims)), uintptr(elemType),
+		uintptr(unsafe.Pointer(&p)))
+	if err := check(st, "CreateTensorRef"); err != nil {
+		return nil, err
+	}
+	return &Tensor{ptr: p, ref: ref}, nil
+}
+
 // Data 返回张量数据指针（只读用途请勿越界写）。
 func (t *Tensor) Data() unsafe.Pointer {
 	var dp uintptr
@@ -315,20 +392,26 @@ func (s *Session) Run(inputNames []string, inputs []*Tensor, outputNames []strin
 	nIn := len(inputNames)
 	namePtrs := make([]uintptr, nIn)
 	valPtrs := make([]uintptr, nIn)
+	inNames := make([]*byte, nIn)
 	for i := range nIn {
-		namePtrs[i] = uintptr(unsafe.Pointer(cstr(inputNames[i])))
+		inNames[i] = cstr(inputNames[i])
+		namePtrs[i] = uintptr(unsafe.Pointer(inNames[i]))
 		valPtrs[i] = inputs[i].ptr
 	}
 	nOut := len(outputNames)
 	outNamePtrs := make([]uintptr, nOut)
+	outNames := make([]*byte, nOut)
 	for i := range nOut {
-		outNamePtrs[i] = uintptr(unsafe.Pointer(cstr(outputNames[i])))
+		outNames[i] = cstr(outputNames[i])
+		outNamePtrs[i] = uintptr(unsafe.Pointer(outNames[i]))
 	}
 	outVals := make([]uintptr, nOut)
 	st := call(ortIdxRun, s.ptr, 0,
 		uintptr(unsafe.Pointer(&namePtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(nIn),
 		uintptr(unsafe.Pointer(&outNamePtrs[0])), uintptr(nOut),
 		uintptr(unsafe.Pointer(&outVals[0])))
+	runtime.KeepAlive(inNames)
+	runtime.KeepAlive(outNames)
 	if err := check(st, "Run"); err != nil {
 		return nil, err
 	}

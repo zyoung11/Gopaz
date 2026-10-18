@@ -11,11 +11,11 @@ import (
 type Encoder struct {
 	ID          string
 	Desc        string
-	Base        []string   // 基础视频编码参数（ffmpegOpts）
-	Extensions  []string   // 允许的容器扩展名
+	Base        []string       // 基础视频编码参数（ffmpegOpts）
+	Extensions  []string       // 允许的容器扩展名
 	CQP         map[string]int // 质量档位 (High/Mid/Low) -> constqp 值
-	HasCQP      bool       // 是否支持 constqp (CQ) 模式
-	RateControl bool       // 是否支持 cbr/vbr 码率控制
+	HasCQP      bool           // 是否支持 constqp (CQ) 模式
+	RateControl bool           // 是否支持 cbr/vbr 码率控制
 }
 
 // Registry 返回全部编码器，按 ID 索引。
@@ -23,65 +23,60 @@ func Registry() map[string]*Encoder {
 	return map[string]*Encoder{
 		"h264-main-win-nvidia": {
 			ID: "h264-main-win-nvidia", Desc: "H.264 High, NVENC, 8bit",
-			Base: strings.Fields("-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -g 30"),
+			Base:       strings.Fields("-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 18, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
-			
 		},
 		"h265-main-win-nvidia": {
 			ID: "h265-main-win-nvidia", Desc: "H.265 Main, NVENC, 8bit",
-			Base: strings.Fields("-c:v hevc_nvenc -profile:v main -pix_fmt yuv420p -b_ref_mode disabled -tag:v hvc1 -g 30"),
+			Base:       strings.Fields("-c:v hevc_nvenc -profile:v main -pix_fmt yuv420p -b_ref_mode disabled -tag:v hvc1 -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
-			
 		},
 		"h265-main10-win-nvidia": {
 			ID: "h265-main10-win-nvidia", Desc: "H.265 Main10, NVENC, 10bit",
-			Base: strings.Fields("-c:v hevc_nvenc -profile:v main10 -pix_fmt p010le -b_ref_mode disabled -tag:v hvc1 -g 30"),
+			Base:       strings.Fields("-c:v hevc_nvenc -profile:v main10 -pix_fmt p010le -b_ref_mode disabled -tag:v hvc1 -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
-			
 		},
 		"av1-win-nvidia": {
 			ID: "av1-win-nvidia", Desc: "AV1, NVENC, 8bit",
-			Base: strings.Fields("-c:v av1_nvenc -preset p6 -tile-columns 2 -tile-rows 2 -pix_fmt yuv420p"),
+			Base:       strings.Fields("-c:v av1_nvenc -preset p6 -tile-columns 2 -tile-rows 2 -pix_fmt yuv420p"),
 			Extensions: []string{"mkv", "webm", "mp4"}, HasCQP: false, RateControl: true,
-			
 		},
 		"av1-10bit-win-nvidia": {
 			ID: "av1-10bit-win-nvidia", Desc: "AV1, NVENC, 10bit",
-			Base: strings.Fields("-c:v av1_nvenc -preset p6 -tile-columns 2 -tile-rows 2 -pix_fmt p010le"),
+			Base:       strings.Fields("-c:v av1_nvenc -preset p6 -tile-columns 2 -tile-rows 2 -pix_fmt p010le"),
 			Extensions: []string{"mkv", "webm", "mp4"}, HasCQP: false, RateControl: true,
-			
 		},
 		"prores-422-hq-win": {
 			ID: "prores-422-hq-win", Desc: "ProRes 422 HQ, 10bit, mov",
-			Base: strings.Fields("-c:v prores_ks -profile:v 3 -vendor apl0 -quant_mat hq -bits_per_mb 1350 -pix_fmt yuv422p10le"),
+			Base:       strings.Fields("-c:v prores_ks -profile:v 3 -vendor apl0 -quant_mat hq -bits_per_mb 1350 -pix_fmt yuv422p10le"),
 			Extensions: []string{"mov"},
 		},
 		"prores-422-std-win": {
 			ID: "prores-422-std-win", Desc: "ProRes 422, 10bit, mov",
-			Base: strings.Fields("-c:v prores_ks -profile:v 2 -vendor apl0 -quant_mat hq -bits_per_mb 1350 -pix_fmt yuv422p10le"),
+			Base:       strings.Fields("-c:v prores_ks -profile:v 2 -vendor apl0 -quant_mat hq -bits_per_mb 1350 -pix_fmt yuv422p10le"),
 			Extensions: []string{"mov"},
 		},
 		"prores-422-lt-win": {
 			ID: "prores-422-lt-win", Desc: "ProRes 422 LT, 10bit, mov",
-			Base: strings.Fields("-c:v prores_ks -profile:v 1 -vendor apl0 -quant_mat lt -bits_per_mb 525 -pix_fmt yuv422p10le"),
+			Base:       strings.Fields("-c:v prores_ks -profile:v 1 -vendor apl0 -quant_mat lt -bits_per_mb 525 -pix_fmt yuv422p10le"),
 			Extensions: []string{"mov"},
 		},
 		"ffv1-10bit-444": {
 			ID: "ffv1-10bit-444", Desc: "FFV1 无损, 10bit 4:4:4",
-			Base: strings.Fields("-level 3 -c:v ffv1 -pix_fmt yuv444p10le -slices 4 -slicecrc 1 -g 1"),
+			Base:       strings.Fields("-level 3 -c:v ffv1 -pix_fmt yuv444p10le -slices 4 -slicecrc 1 -g 1"),
 			Extensions: []string{"mkv", "mov", "avi"},
 		},
 		"ffv1-10bit-420": {
 			ID: "ffv1-10bit-420", Desc: "FFV1 无损, 10bit 4:2:0",
-			Base: strings.Fields("-level 3 -c:v ffv1 -pix_fmt yuv420p10le -slices 4 -slicecrc 1 -g 1"),
+			Base:       strings.Fields("-level 3 -c:v ffv1 -pix_fmt yuv420p10le -slices 4 -slicecrc 1 -g 1"),
 			Extensions: []string{"mkv", "mov", "avi"},
 		},
 		"vp9-best": {
 			ID: "vp9-best", Desc: "VP9 best, 软编",
-			Base: strings.Fields("-strict -2 -c:v libvpx-vp9 -pix_fmt yuv420p -row-mt 1 -deadline best"),
+			Base:       strings.Fields("-strict -2 -c:v libvpx-vp9 -pix_fmt yuv420p -row-mt 1 -deadline best"),
 			Extensions: []string{"mp4", "mkv", "webm"}, RateControl: true,
 		},
 	}
@@ -113,10 +108,10 @@ func SortedIDs() []string {
 // Options 是构造编码参数的可选项。
 type Options struct {
 	EncoderID   string
-	Quality     string  // High/Mid/Low（CQ 模式用）
-	QP          int     // 直接指定 qp（优先于 Quality）
-	RateControl string  // cq/cbr/vbr（默认 cq）
-	Bitrate     int     // cbr/vbr 时的码率 (Mbps)
+	Quality     string // High/Mid/Low（CQ 模式用）
+	QP          int    // 直接指定 qp（优先于 Quality）
+	RateControl string // cq/cbr/vbr（默认 cq）
+	Bitrate     int    // cbr/vbr 时的码率 (Mbps)
 }
 
 // BuildArgs 构造完整的视频编码 ffmpeg 参数。

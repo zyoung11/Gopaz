@@ -64,15 +64,20 @@ func (r *frameReader) Err() error {
 	return r.err
 }
 
+type outFrame struct {
+	f   *Frame
+	inv []float32
+}
+
 type frameWriter struct {
-	ch  chan *Frame
+	ch  chan outFrame
 	enc *video.Encoder
 	wg  sync.WaitGroup
 	err error
 }
 
 func startFrameWriter(enc *video.Encoder) *frameWriter {
-	w := &frameWriter{ch: make(chan *Frame, 2), enc: enc}
+	w := &frameWriter{ch: make(chan outFrame, 4), enc: enc}
 	w.wg.Add(1)
 	go w.run()
 	return w
@@ -80,18 +85,28 @@ func startFrameWriter(enc *video.Encoder) *frameWriter {
 
 func (w *frameWriter) run() {
 	defer w.wg.Done()
-	for f := range w.ch {
+	for of := range w.ch {
 		if w.err != nil {
 			continue
 		}
-		if err := w.enc.WriteFrame(f.ToRGB24()); err != nil {
+		var buf []byte
+		if of.inv != nil {
+			buf = of.f.ToRGB24Norm(of.inv)
+		} else {
+			buf = of.f.ToRGB24()
+		}
+		if err := w.enc.WriteFrame(buf); err != nil {
 			w.err = err
 		}
 	}
 }
 
 func (w *frameWriter) Write(f *Frame) {
-	w.ch <- f
+	w.ch <- outFrame{f: f}
+}
+
+func (w *frameWriter) WriteNorm(f *Frame, inv []float32) {
+	w.ch <- outFrame{f: f, inv: inv}
 }
 
 func (w *frameWriter) Close() error {
