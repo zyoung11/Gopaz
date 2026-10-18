@@ -36,3 +36,42 @@ func TestChooseTileTopaz(t *testing.T) {
 		})
 	}
 }
+
+// TestDuplicateRatio 验证 Topaz 风格的显著差异像素比例。
+func TestDuplicateRatio(t *testing.T) {
+	const w, h = 100, 100
+	base := NewFrame(w, h)
+	for i := range base.Data {
+		base.Data[i] = 0.5
+	}
+	if got := DuplicateRatio(base, base); got != 0 {
+		t.Fatalf("identical ratio = %v, want 0", got)
+	}
+	global := NewFrame(w, h)
+	for i := range global.Data {
+		global.Data[i] = 0.5 + 20.0/255.0
+	}
+	if got := DuplicateRatio(base, global); got != 1 {
+		t.Fatalf("global +20 ratio = %v, want 1", got)
+	}
+	small := NewFrame(w, h)
+	for i := range small.Data {
+		small.Data[i] = 0.5 + 5.0/255.0
+	}
+	if got := DuplicateRatio(base, small); got != 0 {
+		t.Fatalf("global +5 ratio = %v, want 0", got)
+	}
+	block := base.Clone()
+	for y := range 10 {
+		for x := range 40 {
+			i := (y*w + x) * 3
+			block.Data[i], block.Data[i+1], block.Data[i+2] = 1, 1, 1
+		}
+	}
+	if got := DuplicateRatio(base, block); got < 0.039 || got > 0.041 {
+		t.Fatalf("4%% block ratio = %v, want 0.04", got)
+	}
+	if got := DuplicateRatio(base, NewFrame(10, 10)); got != 1 {
+		t.Fatalf("size mismatch ratio = %v, want 1", got)
+	}
+}

@@ -200,7 +200,7 @@ func RunInterpolate(job InterpJob) error {
 	for u0 := 0; u0 < total-1; {
 		u1 := u0 + 1
 		if rdt > 0 {
-			for u1 < total-1 && SceneDiff(frameAt(u1-1), frameAt(u1)) < rdt {
+			for u1 < total-1 && DuplicateRatio(frameAt(u1-1), frameAt(u1)) < rdt {
 				u1++
 			}
 		}

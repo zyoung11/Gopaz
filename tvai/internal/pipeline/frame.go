@@ -263,34 +263,49 @@ func clampInt(v, lo, hi int) int {
 	return v
 }
 
-// SceneDiff 计算两帧的平均绝对差（用于重复帧检测），按行并行。
-func SceneDiff(a, b *Frame) float64 {
+// duplicatePixelThreshold 是判定像素显著变化的阈值，约 10 个 8bit 色阶。
+const duplicatePixelThreshold = 10.0 / 255.0
+
+// DuplicateRatio 返回两帧中差异显著的像素比例，用于重复帧检测。
+func DuplicateRatio(a, b *Frame) float64 {
 	if a.W != b.W || a.H != b.H {
 		return 1
 	}
-	n := a.H
-	if n <= 0 {
+	total := a.W * a.H
+	if total <= 0 {
 		return 0
 	}
+	n := a.H
 	nw := max(min(runtime.NumCPU(), n), 1)
 	chunk := (n + nw - 1) / nw
-	parts := make([]float64, (n+chunk-1)/chunk)
+	parts := make([]int, (n+chunk-1)/chunk)
 	parallelRows(n, func(s, e int) {
-		var local float64
-		for i := s * a.W * 3; i < e*a.W*3; i++ {
-			d := float64(a.Data[i]) - float64(b.Data[i])
-			if d < 0 {
-				d = -d
+		cnt := 0
+		for p := s * a.W; p < e*a.W; p++ {
+			i := p * 3
+			dr := a.Data[i] - b.Data[i]
+			if dr < 0 {
+				dr = -dr
 			}
-			local += d
+			dg := a.Data[i+1] - b.Data[i+1]
+			if dg < 0 {
+				dg = -dg
+			}
+			db := a.Data[i+2] - b.Data[i+2]
+			if db < 0 {
+				db = -db
+			}
+			if max(dr, dg, db) > duplicatePixelThreshold {
+				cnt++
+			}
 		}
-		parts[s/chunk] = local
+		parts[s/chunk] = cnt
 	})
-	var sum float64
+	sum := 0
 	for _, v := range parts {
 		sum += v
 	}
-	return sum / float64(len(a.Data))
+	return float64(sum) / float64(total)
 }
 
 func toByte(v float32) byte {
