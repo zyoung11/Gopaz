@@ -35,21 +35,33 @@ func newE2E(t *testing.T) e2eEnv {
 	}
 	modelDir := os.Getenv("GOPAZ_MODEL_DIR")
 	if modelDir == "" {
-		modelDir = `C:\zy\APP\Big_APPs\TopazVideoAI\models`
+		for _, cand := range []string{filepath.Join("..", "portable", "models"), "models", filepath.Join("..", "models")} {
+			if st, err := os.Stat(cand); err == nil && st.IsDir() {
+				modelDir = cand
+				break
+			}
+		}
+	}
+	if modelDir == "" {
+		t.Skip("set GOPAZ_MODEL_DIR or place .tz models in portable/models")
 	}
 	if st, err := os.Stat(modelDir); err != nil || !st.IsDir() {
 		t.Skipf("model dir not found: %s", modelDir)
 	}
 	if os.Getenv("GOPAZ_ORT_DLL") == "" {
-		cand, err := filepath.Abs(filepath.Join("..", "..", "ort-dll", "onnxruntime.dll"))
-		if err == nil {
-			if _, err := os.Stat(cand); err == nil {
-				os.Setenv("GOPAZ_ORT_DLL", cand)
+		for _, cand := range []string{filepath.Join("ort-dll", "onnxruntime.dll"), filepath.Join("..", "portable", "ort-dll", "onnxruntime.dll"), filepath.Join("..", "ort-dll", "onnxruntime.dll")} {
+			abs, err := filepath.Abs(cand)
+			if err != nil {
+				continue
+			}
+			if _, err := os.Stat(abs); err == nil {
+				os.Setenv("GOPAZ_ORT_DLL", abs)
+				break
 			}
 		}
 	}
 	if os.Getenv("GOPAZ_ORT_DLL") == "" {
-		t.Skip("GOPAZ_ORT_DLL not set")
+		t.Skip("GOPAZ_ORT_DLL not set and onnxruntime.dll not found")
 	}
 	gpu := -1
 	if os.Getenv("GOPAZ_E2E_GPU") == "1" {

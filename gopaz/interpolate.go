@@ -70,6 +70,7 @@ func RunInterpolate(job InterpJob) error {
 	if rangeSpecified {
 		Infof("Frame range %d-%d, %d frames", fr.Start, fr.End, total)
 	}
+	audioStart, audioDuration := sourceAudioTrim(info, fr, total, rangeSpecified)
 
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
@@ -258,7 +259,7 @@ func RunInterpolate(job InterpJob) error {
 		os.Remove(tmpVideo)
 		return fmt.Errorf("encoder finalization failed: %w", err)
 	}
-	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1.0/float64(n)); err != nil {
+	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1.0/float64(n), audioStart, audioDuration); err != nil {
 		os.Remove(tmpVideo)
 		return err
 	}

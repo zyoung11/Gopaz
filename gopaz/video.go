@@ -13,16 +13,19 @@ import (
 
 // VideoInfo holds the basic video information reported by ffprobe.
 type VideoInfo struct {
+	// Width and Height are the display dimensions after applying rotation metadata.
 	Width    int
 	Height   int
 	FPS      float64
 	Frames   int
 	Duration float64
 	HasAudio bool
+	// Rotation is the rotation metadata in degrees.
 	Rotation int
 }
 
-// ProbeVideo reads video information with ffprobe.
+// ProbeVideo reads video information with ffprobe. Width and Height reflect the
+// display orientation, which is also the orientation ffmpeg decodes by default.
 func ProbeVideo(ffprobe, path string) (*VideoInfo, error) {
 	cmd := exec.Command(ffprobe, "-v", "error",
 		"-select_streams", "v:0",
@@ -60,7 +63,17 @@ func ProbeVideo(ffprobe, path string) (*VideoInfo, error) {
 	if aout, err := acmd.Output(); err == nil && len(trimSpace(string(aout))) > 0 {
 		info.HasAudio = true
 	}
+	info.Width, info.Height = orientedSize(info.Width, info.Height, info.Rotation)
 	return info, nil
+}
+
+// orientedSize swaps width and height for quarter-turn rotations so the result
+// matches the frames ffmpeg produces after autorotation.
+func orientedSize(w, h, rotation int) (int, int) {
+	if rotation%180 != 0 {
+		return h, w
+	}
+	return w, h
 }
 
 // VideoDecoder reads raw RGB24 frames sequentially from an ffmpeg pipe.

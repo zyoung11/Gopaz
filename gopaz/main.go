@@ -273,6 +273,8 @@ func localTool(name string) string {
 	return name
 }
 
+// resolveModelDir returns the first existing model directory. The portable
+// layout expects models/ next to the executable; GOPAZ_MODEL_DIR overrides it.
 func resolveModelDir() string {
 	var cands []string
 	if d := os.Getenv("GOPAZ_MODEL_DIR"); d != "" {
@@ -285,10 +287,6 @@ func resolveModelDir() string {
 	if wd, err := os.Getwd(); err == nil {
 		cands = append(cands, filepath.Join(wd, "models"))
 	}
-	cands = append(cands,
-		`C:\zy\APP\Big_APPs\TopazVideoAI\models`,
-		filepath.Join(os.Getenv("ProgramData"), `Topaz Labs LLC\Topaz Video AI\models`),
-	)
 	for _, c := range cands {
 		if st, err := os.Stat(c); err == nil && st.IsDir() {
 			return c

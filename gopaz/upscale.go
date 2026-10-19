@@ -30,6 +30,16 @@ type UpscaleJob struct {
 	AudioBitrate         int
 }
 
+// runnerConfig builds the runner configuration for this job.
+func (job UpscaleJob) runnerConfig(fw, fh int) UpscaleConfig {
+	return UpscaleConfig{
+		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
+		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
+		SceneThreshold: job.SceneThreshold,
+		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, VramGB: job.VramGB, WorkDir: job.WorkDir,
+	}
+}
+
 // RunUpscale runs the upscale and restoration pipeline.
 func RunUpscale(job UpscaleJob) error {
 	info, err := ProbeVideo(job.Ffprobe, job.Input)
@@ -59,18 +69,14 @@ func RunUpscale(job UpscaleJob) error {
 	if rangeSpecified && total > 0 {
 		Infof("Frame range %d-%d, %d frames", fr.Start, fr.End, total)
 	}
+	audioStart, audioDuration := sourceAudioTrim(info, fr, total, rangeSpecified)
 
 	so := job.Model.Temporal
 	if so <= 0 {
 		so = 1
 	}
 
-	cfg := UpscaleConfig{
-		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
-		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
-		SceneThreshold: job.SceneThreshold,
-		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, WorkDir: job.WorkDir,
-	}
+	cfg := job.runnerConfig(fw, fh)
 	r, err := LoadRunner(cfg)
 	if err != nil {
 		return err
@@ -217,7 +223,7 @@ func RunUpscale(job UpscaleJob) error {
 		os.Remove(tmpVideo)
 		return fmt.Errorf("encoder finalization failed: %w", err)
 	}
-	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1); err != nil {
+	if err := MuxAudio(job.Ffmpeg, tmpVideo, job.Input, job.Output, job.AudioMode, job.AudioBitrate, 1, audioStart, audioDuration); err != nil {
 		os.Remove(tmpVideo)
 		return err
 	}

@@ -24,11 +24,13 @@ Topaz Video AI 的本地复刻工具：提供命令行和本地 Web 界面。输
 
 Apollo 单次推理产出 8 子帧，2/4/8 倍精确对齐；Aion 产出 16 子帧，2/4/8/16 倍精确对齐。其余倍数取最近子帧或复用子帧，与 Topaz 行为一致。
 
+带 rotation 元数据的视频按显示方向处理，竖屏素材的输出仍为竖屏。
+
 ## 依赖
 
 1. **ffmpeg / ffprobe** —— 优先用可执行文件同目录或同目录 `bin/` 下的版本，其次 PATH，也可用 `--ffmpeg`/`--ffprobe` 指定
 2. **onnxruntime.dll 1.31+** —— 放在可执行文件同目录的 `ort-dll/`，或用 `GOPAZ_ORT_DLL` 指定；需要 onnxruntime-gpu（CUDA）
-3. **模型文件（.tz）** —— 优先 `GOPAZ_MODEL_DIR`，其次可执行文件同目录的 `models/`，最后探测 Topaz 默认模型目录
+3. **模型文件（.tz）** —— 放在可执行文件同目录的 `models/`，或用 `GOPAZ_MODEL_DIR` 指定
 4. **CUDA + cuDNN 9** —— 优先用可执行文件同目录的 `runtime/`（程序会自动加入 PATH），否则需要在系统 PATH 上
 
 ## 构建
@@ -59,7 +61,7 @@ gopaz-portable\
 查找顺序：
 
 - ffmpeg / ffprobe：exe 同目录 → exe 同目录 `bin\` → PATH
-- 模型：`GOPAZ_MODEL_DIR` → exe 同目录 `models\` → Topaz 默认模型目录
+- 模型：`GOPAZ_MODEL_DIR` → exe 同目录 `models\` → exe 同目录 `..\models\`
 - ORT：`GOPAZ_ORT_DLL` → exe 同目录 `ort-dll\` → 当前目录 `ort-dll\`
 - CUDA / cuDNN：exe 同目录 `runtime\`、`cuda\`、`cudnn\` 会自动加入 PATH
 
@@ -144,7 +146,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 - `--gpu-vram 0`：Aion tile 预算 GB，0=约 2.4M 像素
 - `--vram 0`：每会话显存上限 GB，0=按 tile 自动
 
-慢放输出保持源 FPS，帧数和时长都是 N 倍，音频按同一倍率减速。`--audio-codec copy` 在慢放时会自动改为 AAC。
+慢放输出保持源 FPS，帧数和时长都是 N 倍，音频按同一倍率减速。`--audio-codec copy` 在慢放时会自动改为 AAC。指定 `--start`/`--end` 时，音轨按相同的源区间裁剪。
 
 重复帧替换与 Topaz `tvai_fi` 一致：相邻源帧中变化超过约 10 个 8bit 色阶的像素比例低于 `rdt` 时视为重复帧，在前后非重复帧之间生成插值帧替换，输出帧数/FPS 不变。
 
@@ -166,7 +168,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 --gpu -2          # -2 自动 / -1 CPU / 0+ 设备号
 --threads 4       # 推理线程数
 --overlap 0       # 分块重叠，0=自动（增强/Apollo 48，Aion 32）
---start 0 --end 99  # 只处理指定帧范围
+--start 0 --end 99  # 只处理指定帧范围，音轨同步裁剪
 --workdir <dir>   # 临时 ONNX 解包目录
 ```
 
@@ -187,7 +189,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 go test .
 ```
 
-端到端回归默认跳过，需要模型目录和 onnxruntime：
+端到端回归默认跳过，需要模型目录和 onnxruntime。未设置 `GOPAZ_MODEL_DIR` 或 `GOPAZ_ORT_DLL` 时会尝试 `portable/models`、`ort-dll/` 和 `portable/ort-dll/`：
 
 ```bash
 GOPAZ_E2E=1 go test . -run E2E -v

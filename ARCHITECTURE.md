@@ -482,7 +482,7 @@ dst'[k]   = dst[k] * scale[k] + offset[k]
 -map_metadata:s:a:0 1:s:a:0 -map_metadata 0
 ```
 
-慢放时音频按 `1/factor` 减速。`atempo` 支持的区间为 0.5..100，低于 0.5 时拆成多段。`audio-codec copy` 在慢放时会自动改为 AAC。并轨失败时记录警告，保留无音轨输出，而不是丢弃整个视频。
+慢放时音频按 `1/factor` 减速。`atempo` 支持的区间为 0.5..100，低于 0.5 时拆成多段。`audio-codec copy` 在慢放时会自动改为 AAC。指定 `--start`/`--end` 时，音频输入用 `-ss` 和 `-t` 读取同一源区间，避免音轨长度与画面不一致。并轨失败时记录警告，保留无音轨输出，而不是丢弃整个视频。
 
 ### 8.3 编码
 
@@ -507,7 +507,9 @@ dst'[k]   = dst[k] * scale[k] + offset[k]
 - 只给 end：从 0 到 end。
 - 越界时裁剪到有效范围；无效范围返回错误。
 
-解码端通过 ffmpeg `select='between(n,start,end)'` 过滤，并设置 `-vsync 0`，输出帧数与范围一致。
+解码端通过 ffmpeg `select='between(n,start,end)'` 过滤，并设置 `-vsync 0`，输出帧数与范围一致。指定范围时，第二趟并轨用相同的源时间区间裁剪音轨。
+
+带 rotation 元数据的视频在 `ProbeVideo` 阶段把宽高转换为显示方向，ffmpeg 解码时自动旋转，后续分块和输出尺寸都基于这一方向。
 
 ## 9. 验证与质量
 
