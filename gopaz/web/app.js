@@ -12,8 +12,6 @@ const I18N = {
     "input.title": "Input",
     "input.change": "Change",
     "input.select": "Select video",
-    "input.placeholder": "or paste a video path",
-    "input.load": "Load path",
     "meta.resolution": "Resolution",
     "meta.fps": "Frame rate",
     "meta.frames": "Frames",
@@ -26,7 +24,6 @@ const I18N = {
     "stage.title": "Import a video to start",
     "stage.desc": "Pick a local video to begin.",
     "stage.select": "Select video",
-    "stage.placeholder": "or paste a full path and press Enter",
     "preview.desc": "Open the output video after processing",
     "player.original": "Original",
     "player.processed": "Processed",
@@ -79,6 +76,7 @@ const I18N = {
     "output.namePlaceholder": "File name",
     "output.pickFolder": "Select folder",
     "output.savesAs": "Saves as",
+    "cli.label": "Equivalent CLI command",
     "log.show": "Logs",
     "log.hide": "Hide logs",
     "task.start": "Start",
@@ -88,7 +86,6 @@ const I18N = {
     "toast.previewShort": "Not enough frames for a preview",
     "task.processing": "Processing…",
     "task.ready": "Ready",
-    "task.waiting": "Waiting for a task",
     "task.preparing": "Preparing",
     "task.enhancing": "Enhancing",
     "task.interpolating": "Interpolating",
@@ -111,6 +108,20 @@ const I18N = {
     "model.note.gaiacg": "Computer generated · 5-frame temporal",
     "model.note.apollo": "Fast interpolation · 8 subframes",
     "model.note.aion": "High quality interpolation · 16 subframes",
+    "tooltip.model.proteus": "<p>Upscale video with multiple parameters for fine-tuning. Parameters include Compression reversion, detail recovery, sharpening, noise reduction, dehaloing, and antialiasing / deblurring. Use \"Comparison View\" when trying out the model to hone in on the best results.</p>",
+    "tooltip.model.gaia": "<p>Upscale high quality video. May produce more details.</p>",
+    "tooltip.model.gaia-cg": "<p>Upscale video with aliasing or moire patterns. May enhance more details.</p>",
+    "tooltip.model.apollo": "<p>Specializes in non-linear motion and slightly blurry inputs. Generates 8 interpolated frames per run; much faster processing than Chronos when you need more generated frames.</p>",
+    "tooltip.model.aion": "<p>Improves upon Apollo at handling large motion. Fewer tiling artifacts on high resolution videos. Supports up to 16x slow motion.</p>",
+    "tooltip.param.deblur": "<p>Adjusts anti-aliasing and deblurring strength.</p><p>Negative values are better if the input video has aliasing artifacts such as moire patterns or staircasing. Positive values are better if the input video has more lens blurring than aliasing artifacts.</p>",
+    "tooltip.param.denoise": "<p>Removes ISO noise from the input video. Higher values remove more noise but may also remove fine details.</p><p>Adjust this based on the amount of noise in the input video. Higher values on videos with low ISO noise may introduce artifacts.</p>",
+    "tooltip.param.detail": "<p>Recovers fine texture and detail lost due to in-camera noise suppression.</p><p>Adjust this based on the amount of noise suppression in the camera. Higher values may introduce artifacts if the input video has little in-camera noise suppression.</p>",
+    "tooltip.param.dehalo": "<p>Increase this if the input video has halo or ringing artifacts around strong edges caused by over-sharpening.</p><p>The value is relative to the amount of haloing in the input video. Values that are too high may cause additional artifacts.</p>",
+    "tooltip.param.sharpen": "<p>Additional sharpening of the video. Use this if the input video looks too soft.</p><p>Adjust this based on the softness of the input video. If the input is already sharp, higher values will introduce artifacts.</p>",
+    "tooltip.param.fix-compression": "<p>Reduces compression artifacts from codec encoding, such as blockiness or mosquito noise. Higher values are best for low bitrate videos.</p><p>Adjust this based on the amount of compression artifacts in the input. Higher values on a clean video will introduce more artifacts.</p>",
+    "tooltip.param.scale": "<p>Output scale factor. 1x repairs the video without resizing; 2x and 4x upscale it.</p>",
+    "tooltip.param.factor": "<p>Slow the playback speed of your input video for a slow-mo effect.</p><p>The frame interpolation filter calculates the number of frames from the output FPS and the slow motion factor. For example, 2x FPS and 3x slow motion produce 6x the input frame count.</p>",
+    "tooltip.param.sensitivity": "<p>Raise the slider to increase sensitivity for removing duplicate or similar frames.</p><p>A higher setting may remove frames that are not duplicates but look very similar.</p>",
   },
   zh: {
     "status.ready": "就绪",
@@ -122,8 +133,6 @@ const I18N = {
     "input.title": "输入",
     "input.change": "更换",
     "input.select": "选择视频",
-    "input.placeholder": "或粘贴视频路径",
-    "input.load": "加载路径",
     "meta.resolution": "分辨率",
     "meta.fps": "帧率",
     "meta.frames": "帧数",
@@ -136,7 +145,6 @@ const I18N = {
     "stage.title": "导入视频开始",
     "stage.desc": "选择一个本地视频开始。",
     "stage.select": "选择视频",
-    "stage.placeholder": "或粘贴完整路径，回车加载",
     "preview.desc": "处理完成后可打开输出视频",
     "player.original": "原画",
     "player.processed": "处理后",
@@ -189,6 +197,7 @@ const I18N = {
     "output.namePlaceholder": "文件名",
     "output.pickFolder": "选择文件夹",
     "output.savesAs": "实际保存为",
+    "cli.label": "当前设置对应的命令行",
     "log.show": "日志",
     "log.hide": "收起日志",
     "task.start": "开始处理",
@@ -198,7 +207,6 @@ const I18N = {
     "toast.previewShort": "剩余帧数不足以生成预览",
     "task.processing": "处理中…",
     "task.ready": "就绪",
-    "task.waiting": "等待任务",
     "task.preparing": "准备中",
     "task.enhancing": "增强中",
     "task.interpolating": "插帧中",
@@ -221,6 +229,20 @@ const I18N = {
     "model.note.gaiacg": "计算机图形 · 5 帧时序",
     "model.note.apollo": "快速插帧 · 8 子帧",
     "model.note.aion": "高质量插帧 · 16 子帧",
+    "tooltip.model.proteus": "<p>通过多个参数精调放大视频。参数包括压缩修复、细节恢复、锐化、降噪、去光晕和抗锯齿/去模糊。试用模型时可使用对比视图找到最佳结果。</p>",
+    "tooltip.model.gaia": "<p>放大高质量视频，可恢复更多细节。</p>",
+    "tooltip.model.gaia-cg": "<p>放大存在锯齿或摩尔纹的视频，可增强更多细节。</p>",
+    "tooltip.model.apollo": "<p>专门处理非线性运动和略微模糊的输入。每次运行生成 8 个插值帧；在需要生成更多帧时比 Chronos 快得多。</p>",
+    "tooltip.model.aion": "<p>在大运动处理上优于 Apollo。在高分辨率视频上分块伪影更少。支持最高 16 倍慢放。</p>",
+    "tooltip.param.deblur": "<p>调整抗锯齿和去模糊强度。</p><p>输入视频存在摩尔纹或阶梯等锯齿伪影时，负值更合适；镜头模糊多于锯齿时，正值更合适。</p>",
+    "tooltip.param.denoise": "<p>移除输入视频中的 ISO 噪点。数值越高移除的噪点越多，但也可能移除细节。</p><p>应根据输入视频的噪点程度调整。低噪点视频使用较高数值可能引入伪影。</p>",
+    "tooltip.param.detail": "<p>用于恢复因相机降噪而丢失的细腻纹理和细节。</p><p>应根据相机降噪程度调整。如果输入视频几乎没有相机降噪，较高数值可能引入伪影。</p>",
+    "tooltip.param.dehalo": "<p>当输入视频在强边缘周围因过度锐化出现光晕或振铃伪影时提高该值。</p><p>数值应相对于输入视频的光晕程度。数值过高可能导致额外伪影。</p>",
+    "tooltip.param.sharpen": "<p>对视频进行额外锐化。输入视频看起来偏软时使用。</p><p>应根据输入视频的软度调整。如果输入视频已经很锐利，较高数值会引入伪影。</p>",
+    "tooltip.param.fix-compression": "<p>减少编码造成的压缩伪影，例如块效应或蚊式噪声。低码率视频适合较高数值。</p><p>应根据输入视频的压缩伪影程度调整。干净视频使用较高数值会引入更多伪影。</p>",
+    "tooltip.param.scale": "<p>输出倍率。1x 只修复不改变尺寸；2x 和 4x 会放大视频。</p>",
+    "tooltip.param.factor": "<p>降低输入视频的播放速度以获得慢动作效果。</p><p>插帧滤镜会根据输出 FPS 和慢放倍数计算要生成的帧数。例如输出 FPS 为 2 倍、慢放 3 倍时，总帧数为输入的 6 倍。</p>",
+    "tooltip.param.sensitivity": "<p>提高滑块可增加对重复帧或相似帧的移除灵敏度。</p><p>数值过高可能移除并非重复但看起来非常相似的帧。</p>",
   },
 };
 
@@ -276,6 +298,7 @@ const state = {
   seeking: false,
   draggingDivider: false,
   divider: 50,
+  tooltipTarget: null,
 };
 
 function currentModel() {
@@ -313,6 +336,7 @@ function renderOutputHint() {
 }
 
 function applyI18n() {
+  hideTooltip();
   document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
   $$("[data-i18n]").forEach((el) => {
     el.textContent = t(el.dataset.i18n);
@@ -379,6 +403,43 @@ function toast(msg, isError = false) {
   }, 4500);
 }
 
+function showTooltip(el) {
+  if (!el || !el.dataset.tooltipKey) return;
+  if (state.tooltipTarget === el) return;
+  const body = t(el.dataset.tooltipKey);
+  if (!body || body === el.dataset.tooltipKey) return;
+  const tip = $("#tooltip");
+  tip.innerHTML = "";
+  const title = document.createElement("span");
+  title.className = "tooltip-title";
+  title.textContent = el.dataset.tooltipTitle || el.textContent.trim();
+  const content = document.createElement("div");
+  content.className = "tooltip-body";
+  content.innerHTML = body;
+  tip.append(title, content);
+  tip.hidden = false;
+  const rect = el.getBoundingClientRect();
+  const margin = 8;
+  let left = rect.left;
+  let top = rect.bottom + 6;
+  const width = tip.offsetWidth;
+  const height = tip.offsetHeight;
+  if (left + width > window.innerWidth - margin) left = window.innerWidth - width - margin;
+  if (left < margin) left = margin;
+  if (top + height > window.innerHeight - margin) top = rect.top - height - 6;
+  if (top < margin) top = margin;
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+  state.tooltipTarget = el;
+}
+
+function hideTooltip() {
+  const tip = $("#tooltip");
+  if (!tip) return;
+  tip.hidden = true;
+  state.tooltipTarget = null;
+}
+
 function formatBytes(n) {
   if (!n || n <= 0) return "";
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -442,6 +503,7 @@ async function loadConfig() {
 }
 
 function renderFilters() {
+  hideTooltip();
   if (!state.config) return;
   const host = $("#filterList");
   host.innerHTML = "";
@@ -455,6 +517,8 @@ function renderFilters() {
       btn.type = "button";
       btn.className = "filter-item";
       btn.dataset.model = model.key;
+      btn.dataset.tooltipKey = `tooltip.model.${model.key}`;
+      btn.dataset.tooltipTitle = model.display;
       const icon = kind === "enhance" ? "#i-spark" : "#i-frames";
       btn.innerHTML = `
         <span class="filter-icon"><svg class="icon"><use href="${icon}"/></svg></span>
@@ -497,6 +561,7 @@ function selectModel(key, sync = true) {
 }
 
 function renderModelSettings() {
+  hideTooltip();
   const model = currentModel();
   if (!model) return;
   const host = $("#modelSettings");
@@ -513,6 +578,8 @@ function renderModelSettings() {
     const label = document.createElement("div");
     label.className = "control-label";
     label.textContent = t("settings.scale");
+    label.dataset.tooltipKey = "tooltip.param.scale";
+    label.dataset.tooltipTitle = t("settings.scale");
     group.append(label);
     group.append(
       segmented(
@@ -538,7 +605,7 @@ function renderModelSettings() {
         params.append(
           sliderRow(p.guiName, -100, 100, 1, state.settings.params[p.key] ?? 0, (v) => {
             state.settings.params[p.key] = v;
-          })
+          }, `tooltip.param.${p.key}`)
         );
       }
       host.append(params);
@@ -551,6 +618,8 @@ function renderModelSettings() {
   const factorLabel = document.createElement("div");
   factorLabel.className = "control-label";
   factorLabel.textContent = t("settings.factor");
+  factorLabel.dataset.tooltipKey = "tooltip.param.factor";
+  factorLabel.dataset.tooltipTitle = t("settings.factor");
   factorGroup.append(factorLabel);
   factorGroup.append(
     segmented(
@@ -569,12 +638,14 @@ function renderModelSettings() {
   const sensLabel = document.createElement("div");
   sensLabel.className = "control-label";
   sensLabel.textContent = t("settings.sensitivity");
+  sensLabel.dataset.tooltipKey = "tooltip.param.sensitivity";
+  sensLabel.dataset.tooltipTitle = t("settings.sensitivity");
   sensGroup.append(sensLabel);
   sensGroup.append(
     sliderRow(t("settings.sensitivity"), 0, 100, 1, state.settings.sensitivity, (v) => {
       state.settings.sensitivity = v;
       renderCliHint();
-    })
+    }, "tooltip.param.sensitivity")
   );
   host.append(sensGroup);
 }
@@ -597,13 +668,16 @@ function segmented(options, current, onChange) {
   return box;
 }
 
-function sliderRow(label, min, max, step, value, onChange) {
+function sliderRow(label, min, max, step, value, onChange, tooltipKey) {
   const row = document.createElement("div");
   row.className = "slider-row";
 
   const name = document.createElement("label");
   name.textContent = label;
-  name.title = label;
+  if (tooltipKey) {
+    name.dataset.tooltipKey = tooltipKey;
+    name.dataset.tooltipTitle = label;
+  }
 
   const range = document.createElement("input");
   range.type = "range";
@@ -876,8 +950,6 @@ async function loadInput(path) {
       localStorage.setItem("gopaz.outputDir", info.dir);
     }
     $("#outputDirInput").value = state.outputDir;
-    $("#inputPath").value = clean;
-    $("#stagePath").value = clean;
     renderInput();
     resetJobView();
     state.outputPath = "";
@@ -922,24 +994,14 @@ function renderInput() {
 
 }
 
-function inputFromField(sel) {
-  const value = $(sel).value;
-  if (!value.trim()) {
-    toast(t("toast.selectPath"), true);
-    return;
-  }
-  loadInput(value);
-}
 
 function resetTaskLabels() {
   $("#progressTrack").classList.remove("indeterminate");
   $("#progressFill").style.width = "0%";
   $("#progressLabel").textContent = t("task.ready");
   $("#progressValue").textContent = "0%";
-  $("#taskMeta").textContent = t("task.waiting");
   $("#taskSpeed").textContent = `— ${t("task.fpsUnit")}`;
   $("#taskEta").textContent = `${t("task.eta")} —`;
-  $("#taskElapsed").textContent = "";
 }
 
 async function startJob() {
@@ -1047,19 +1109,25 @@ function renderJob(job) {
   const eta = p.eta || 0;
   $("#taskSpeed").textContent = speed > 0 ? `${speed.toFixed(1)} ${t("task.fpsUnit")}` : `— ${t("task.fpsUnit")}`;
   $("#taskEta").textContent = eta > 0 ? `${t("task.eta")} ${formatDuration(eta)}` : `${t("task.eta")} —`;
-  $("#taskElapsed").textContent = formatDuration(job.elapsed);
-  if (job.preview) {
-    const text = `${t("task.preview")} ${formatSeconds(job.previewStart)}–${formatSeconds(job.previewStart + job.previewSourceDuration)}`;
-    $("#taskMeta").textContent = text;
-    $("#taskMeta").title = text;
-  } else {
-    $("#taskMeta").textContent = job.output || "";
-    $("#taskMeta").title = job.output || "";
-  }
   $("#revealButton").hidden = job.preview || job.state !== "done";
   $("#cancelButton").hidden = job.state !== "running";
   appendLogs(job.logs || []);
   updatePreviewButton();
+}
+
+function logLevelLabel(level) {
+  switch (level) {
+    case "success":
+      return "OK";
+    case "warn":
+      return "WARN";
+    case "error":
+      return "ERR";
+    case "debug":
+      return "DBG";
+    default:
+      return "INFO";
+  }
 }
 
 function appendLogs(logs) {
@@ -1076,10 +1144,13 @@ function appendLogs(logs) {
     const time = document.createElement("span");
     time.className = "log-time";
     time.textContent = log.time || "";
+    const level = document.createElement("span");
+    level.className = "log-level";
+    level.textContent = logLevelLabel(log.level);
     const msg = document.createElement("span");
     msg.className = "log-msg";
     msg.textContent = log.msg || "";
-    line.append(time, msg);
+    line.append(time, level, msg);
     panel.append(line);
   }
   state.logsShown = logs.length;
@@ -1136,8 +1207,6 @@ function finishJobUI(job) {
     $("#progressFill").style.width = "100%";
     $("#progressLabel").textContent = t("task.done");
     $("#progressValue").textContent = "100%";
-    $("#taskMeta").textContent = job.output || "";
-    $("#taskMeta").title = job.output || "";
     $("#taskEta").textContent = `${t("task.eta")} —`;
     if (job.output) {
       const name = basename(job.output);
@@ -1203,15 +1272,6 @@ function bindEvents() {
   $("#pickInputButton").addEventListener("click", pickInput);
   $("#stagePickButton").addEventListener("click", pickInput);
   $("#changeInputButton").addEventListener("click", pickInput);
-
-  $("#inputPathGo").addEventListener("click", () => inputFromField("#inputPath"));
-  $("#stagePathGo").addEventListener("click", () => inputFromField("#stagePath"));
-  $("#inputPath").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") inputFromField("#inputPath");
-  });
-  $("#stagePath").addEventListener("keydown", (e) => {
-    if (e.key === "Enter") inputFromField("#stagePath");
-  });
 
   $("#pickOutputDirButton").addEventListener("click", pickOutputDir);
   $("#outputDirInput").addEventListener("change", () => {
@@ -1341,6 +1401,20 @@ function bindEvents() {
   $("#cancelButton").addEventListener("click", cancelJob);
   $("#revealButton").addEventListener("click", revealOutput);
   $("#logButton").addEventListener("click", toggleLogs);
+
+  document.addEventListener("pointerover", (event) => {
+    const target = event.target.closest("[data-tooltip-key]");
+    if (target) showTooltip(target);
+  });
+  document.addEventListener("pointerout", (event) => {
+    const target = event.target.closest("[data-tooltip-key]");
+    if (!target) return;
+    if (event.relatedTarget && target.contains(event.relatedTarget)) return;
+    hideTooltip();
+  });
+  window.addEventListener("scroll", hideTooltip, true);
+  window.addEventListener("resize", hideTooltip);
+  window.addEventListener("blur", hideTooltip);
 
   for (const ev of ["dragenter", "dragover"]) {
     window.addEventListener(ev, (e) => e.preventDefault());

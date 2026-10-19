@@ -407,6 +407,18 @@ func buildJobArgs(req *jobRequest, plan *jobPlan) []string {
 	return args
 }
 
+func formatCommand(args []string) string {
+	quoted := make([]string, len(args))
+	for i, arg := range args {
+		if strings.ContainsAny(arg, " 	") {
+			quoted[i] = "\"" + arg + "\""
+		} else {
+			quoted[i] = arg
+		}
+	}
+	return strings.Join(quoted, " ")
+}
+
 func handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -451,12 +463,16 @@ func handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	jobsMu.Unlock()
 
 	allowMediaPath(plan.OutputPath)
+	args := buildJobArgs(&req, plan)
+	ext := strings.TrimPrefix(filepath.Ext(plan.OutputPath), ".")
 	if plan.Preview {
+		j.addLog("info", fmt.Sprintf("Preview range: %.2fs-%.2fs, output %.2fs", plan.PreviewStart, plan.PreviewStart+plan.PreviewSourceDuration, plan.PreviewDuration))
 		j.addLog("info", "Preview file: "+plan.OutputPath)
 	} else {
+		j.addLog("info", fmt.Sprintf("Settings: mode=%s model=%s encoder=%s container=%s", plan.Mode, plan.Model.Key, plan.Encoder.ID, ext))
 		j.addLog("info", "Output file: "+plan.OutputPath)
 	}
-	args := buildJobArgs(&req, plan)
+	j.addLog("info", "Command: gopaz "+formatCommand(args))
 	go runJob(j, args)
 	writeJSON(w, http.StatusOK, j.view())
 }
@@ -582,10 +598,12 @@ func scanEvents(r io.Reader, j *job, fallbackLevel string) {
 }
 
 func finishJob(j *job, err error) {
+	cancelled := false
 	j.mu.Lock()
 	switch {
 	case j.cancelled:
 		j.State = "cancelled"
+		cancelled = true
 	case err == nil:
 		j.State = "done"
 		j.Progress.Pct = 100
@@ -601,6 +619,9 @@ func finishJob(j *job, err error) {
 	j.Finished = time.Now()
 	j.Progress.ETA = 0
 	j.mu.Unlock()
+	if cancelled {
+		j.addLog("warn", "Job cancelled")
+	}
 
 	jobsMu.Lock()
 	if activeJob == j {

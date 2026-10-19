@@ -21,9 +21,9 @@
 }
 
 :root {
-  --bg: #171717;
-  --panel: #212121;
-  --panel-2: #1b1b1b;
+  --bg: rgb(23, 23, 23);
+  --panel: rgb(33, 33, 33);
+  --panel-2: rgb(23, 23, 23);
   --elev: #2b2b2b;
   --border: #2b2b2b;
   --border-strong: #353535;
@@ -35,8 +35,7 @@
   --blue: #4198ff;
   --red: #ff2156;
   --yellow: #ffce21;
-  --green-soft: rgba(166, 255, 0, 0.12);
-  --blue-soft: rgba(65, 152, 255, 0.14);
+  --accent-soft: rgba(166, 255, 0, 0.12);
   --red-soft: rgba(255, 33, 86, 0.14);
   --radius: 4px;
   --font: "Inter", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
@@ -217,7 +216,7 @@ input[type="range"]::-moz-range-thumb {
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.08em;
 }
 
 .brand-tag {
@@ -339,7 +338,7 @@ input[type="range"]::-moz-range-thumb {
 
 .filter-item.active .filter-icon {
   border-color: var(--accent);
-  background: var(--green-soft);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -384,7 +383,7 @@ input[type="range"]::-moz-range-thumb {
 
 .file-button:hover {
   border-color: var(--accent);
-  background: var(--green-soft);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -467,7 +466,7 @@ input[type="range"]::-moz-range-thumb {
 
 .badge.accent {
   border-color: var(--accent);
-  background: var(--green-soft);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -539,15 +538,7 @@ input[type="range"]::-moz-range-thumb {
   font-size: 11px;
 }
 
-.stage-path {
-  display: flex;
-  gap: 6px;
-  margin-top: 12px;
-}
 
-.stage-path .path-input {
-  text-align: left;
-}
 
 .primary {
   height: 34px;
@@ -882,6 +873,7 @@ input[type="range"]::-moz-range-thumb {
   background: transparent;
   color: var(--text-2);
   font-size: 11px;
+  white-space: nowrap;
 }
 
 .segmented button:last-child {
@@ -984,12 +976,25 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .progress-head {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
   margin-bottom: 5px;
   color: var(--text-3);
   font-size: 10px;
+}
+
+.progress-stats {
+  display: flex;
+  flex: none;
+  gap: 12px;
+  font-family: var(--mono);
+  white-space: nowrap;
+}
+
+.progress-stats span {
+  white-space: nowrap;
 }
 
 #progressLabel {
@@ -1039,40 +1044,14 @@ input[type="range"]::-moz-range-thumb {
   gap: 6px;
 }
 
-.task-meta {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  margin-top: 6px;
-  color: var(--text-3);
-  font-family: var(--mono);
-  font-size: 9px;
-}
-
-#taskMeta {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.task-stats {
-  display: flex;
-  flex: none;
-  gap: 12px;
-}
-
-.task-stats span {
-  white-space: nowrap;
-}
-
 .log-panel {
-  max-height: 170px;
+  max-height: min(320px, 38vh);
   margin: 8px 0 0;
   padding: 8px 10px;
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #121212;
+  background: var(--panel-2);
   color: var(--text-2);
   font: 10px/1.55 var(--mono);
   white-space: pre-wrap;
@@ -1080,6 +1059,7 @@ input[type="range"]::-moz-range-thumb {
 
 .log-line {
   display: flex;
+  align-items: flex-start;
   gap: 8px;
 }
 
@@ -1088,18 +1068,35 @@ input[type="range"]::-moz-range-thumb {
   color: var(--text-3);
 }
 
+.log-level {
+  flex: none;
+  width: 34px;
+  color: var(--text-3);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.log-msg {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.log-line.warn .log-level,
 .log-line.warn .log-msg {
   color: var(--yellow);
 }
 
+.log-line.error .log-level,
 .log-line.error .log-msg {
   color: var(--red);
 }
 
+.log-line.success .log-level,
 .log-line.success .log-msg {
   color: var(--accent);
 }
 
+.log-line.debug .log-level,
 .log-line.debug .log-msg {
   color: var(--text-3);
 }
@@ -1287,7 +1284,7 @@ input[type="range"]::-moz-range-thumb {
   border-right: 1px solid var(--accent);
   border-left: 1px solid var(--accent);
   border-radius: 2px;
-  background: var(--green-soft);
+  background: var(--accent-soft);
   pointer-events: none;
 }
 
@@ -1337,14 +1334,17 @@ input[type="range"]::-moz-range-thumb {
 }
 
 .player-mode button {
+  flex: 0 0 auto;
+  min-width: 54px;
   height: 28px;
   padding: 0 9px;
   font-size: 10px;
+  white-space: nowrap;
 }
 
 .icon-button.active {
   border-color: var(--accent);
-  background: var(--green-soft);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -1370,4 +1370,47 @@ input[type="range"]::-moz-range-thumb {
 .icon-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.cli-hint-label {
+  margin-bottom: 6px;
+  color: var(--text-3);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tooltip {
+  position: fixed;
+  z-index: 30;
+  max-width: 340px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+}
+
+.tooltip-title {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.tooltip-body p {
+  margin: 0 0 6px;
+}
+
+.tooltip-body p:last-child {
+  margin-bottom: 0;
+}
+
+.tooltip-body b,
+.tooltip-body strong {
+  color: var(--text);
 }
