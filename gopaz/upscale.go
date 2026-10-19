@@ -24,7 +24,6 @@ type UpscaleJob struct {
 	KColor bool
 	// SceneThreshold is the scene change threshold; 0 uses the default 6.5.
 	SceneThreshold       float64
-	WorkDir              string
 	StartFrame, EndFrame int
 	Encode               EncodeOptions
 	AudioMode            string
@@ -37,7 +36,7 @@ func (job UpscaleJob) runnerConfig(fw, fh int) UpscaleConfig {
 		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
 		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
 		SceneThreshold: job.SceneThreshold,
-		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, VramGB: job.VramGB, WorkDir: job.WorkDir,
+		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, VramGB: job.VramGB,
 	}
 }
 

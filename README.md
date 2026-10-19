@@ -14,6 +14,7 @@ Topaz Video AI 的本地复刻工具：提供命令行和本地 Web 界面。输
 | `gopaz serve` | 只启动 Web 界面 |
 | `gopaz upscale` | 超分（2x/4x）或修复（1x） |
 | `gopaz interpolate` | 慢放/插帧（2-16 倍） |
+| `gopaz prepare` | 把 `.tz` 解压成明文 `.onnx` |
 | `gopaz models` | 列出可用模型 |
 | `gopaz encoders` | 列出可用编码器 |
 
@@ -32,7 +33,7 @@ Apollo 单次推理产出 8 子帧，2/4/8 倍精确对齐；Aion 产出 16 子�
 
 1. **ffmpeg / ffprobe** —— 优先用可执行文件同目录或同目录 `bin/` 下的版本，其次 PATH，也可用 `--ffmpeg`/`--ffprobe` 指定
 2. **onnxruntime.dll 1.31+** —— 放在可执行文件同目录的 `ort-dll/`，或用 `GOPAZ_ORT_DLL` 指定；需要 onnxruntime-gpu（CUDA）
-3. **模型文件（.tz）** —— 放在可执行文件同目录的 `models/`，或用 `GOPAZ_MODEL_DIR` 指定
+3. **模型文件** —— 放在可执行文件同目录的 `models/`，或用 `GOPAZ_MODEL_DIR` 指定；支持明文 `.onnx` 和加密 `.tz`，同名时优先 `.onnx`
 4. **CUDA + cuDNN 9** —— 优先用可执行文件同目录的 `runtime/`（程序会自动加入 PATH），否则需要在系统 PATH 上
 
 ## 构建
@@ -57,15 +58,26 @@ gopaz-portable\
 │  ├─ onnxruntime_providers_cuda.dll
 │  └─ onnxruntime_providers_shared.dll
 ├─ runtime\              # 可选，CUDA / cuDNN 9 的运行库
-└─ models\               # 只放 .tz，不需要 Topaz 的 JSON
+└─ models\               # .onnx 或 .tz，不需要 Topaz 的 JSON
 ```
 
 查找顺序：
 
 - ffmpeg / ffprobe：exe 同目录 → exe 同目录 `bin\` → PATH
-- 模型：`GOPAZ_MODEL_DIR` → exe 同目录 `models\` → exe 同目录 `..\models\`
+- 模型：`GOPAZ_MODEL_DIR` → exe 同目录 `models\` → exe 同目录 `..\models\`；同名 `.onnx` 优先于 `.tz`
 - ORT：`GOPAZ_ORT_DLL` → exe 同目录 `ort-dll\` → 当前目录 `ort-dll\`
 - CUDA / cuDNN：exe 同目录 `runtime\`、`cuda\`、`cudnn\` 会自动加入 PATH
+
+### 预解压模型
+
+把 `.tz` 转成明文 `.onnx`，启动时不再解密和解压：
+
+```bash
+gopaz prepare --model-dir .\models
+gopaz prepare --model-dir .\models --force
+```
+
+转换后会得到同名 `.onnx`，程序优先使用它；`.tz` 保留作为回退。`prepare` 输出的是未打补丁的原始 ONNX，Patch 只在加载时于内存完成，不要手动预打补丁。模型更新后重新运行 `prepare`。明文 ONNX 只适合本机使用，不要分发。
 
 ## Web 界面
 
@@ -172,14 +184,13 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 --threads 4       # 推理线程数
 --overlap 0       # 分块重叠，0=自动（增强/Apollo 48，Aion 32）
 --start 0 --end 99  # 只处理指定帧范围，音轨同步裁剪
---workdir <dir>   # 临时 ONNX 解包目录
 ```
 
 ## 环境变量
 
 | 变量 | 说明 |
 |---|---|
-| `GOPAZ_MODEL_DIR` | `.tz` 模型目录 |
+| `GOPAZ_MODEL_DIR` | 模型目录，包含 `.onnx` 或 `.tz` |
 | `GOPAZ_ORT_DLL` | onnxruntime.dll 路径 |
 | `GOPAZ_CUDNN_ALGO` | cuDNN 卷积算法 exhaustive、heuristic 或 default |
 | `GOPAZ_DEBUG=1` | 输出诊断信息 |
@@ -202,4 +213,4 @@ GOPAZ_E2E=1 GOPAZ_E2E_GPU=1 GOPAZ_E2E_AION=1 go test . -run TestE2EAionDuplicate
 
 ## 声明
 
-`.tz` 模型来自本机安装的 Topaz Video AI，仅用于本机/个人使用，请勿再分发。
+`.tz` 模型来自本机安装的 Topaz Video AI，仅用于本机/个人使用，请勿再分发。用 `gopaz prepare` 生成的明文 `.onnx` 同样不要分发。

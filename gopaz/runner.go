@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -40,8 +39,6 @@ type UpscaleConfig struct {
 	VramGB float64
 	// DeviceVRAMGB is the Aion tile budget in GB; 0 uses the default cap.
 	DeviceVRAMGB float64
-	// WorkDir is the temporary unpack directory.
-	WorkDir string
 }
 
 // Runner holds a loaded model session and its tile plan.
@@ -149,17 +146,13 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	} else {
 		tw, th = chooseTile(candidates, cfg.FW, cfg.FH, overlap, TilePenalty)
 	}
-	tzPath, err := m.TZPath(cfg.ModelDir, tw, th, cfg.Scale)
+	modelPath, err := m.TZPath(cfg.ModelDir, tw, th, cfg.Scale)
 	if err != nil {
 		return nil, err
 	}
-	onnxBytes, err := os.ReadFile(tzPath)
+	raw, err := readModel(modelPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read model: %w", err)
-	}
-	raw, err := Extract(onnxBytes, Password)
-	if err != nil {
-		return nil, fmt.Errorf("failed to unpack model: %w", err)
+		return nil, err
 	}
 	if patched, changed, perr := PatchReduceMeanFp32(raw); perr == nil && changed {
 		Debugf("inserted fp32 accumulation patch for fp16 ReduceMean")
@@ -171,20 +164,15 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 			raw = patched
 		}
 	}
-	if cfg.WorkDir == "" {
-		cfg.WorkDir = os.TempDir()
-	}
-	os.MkdirAll(cfg.WorkDir, 0o755)
-	onnxPath := filepath.Join(cfg.WorkDir, fmt.Sprintf("%s_%dx%d_%dx.onnx", m.Short, th, tw, cfg.Scale))
-	if err := os.WriteFile(onnxPath, raw, 0o644); err != nil {
-		return nil, fmt.Errorf("failed to write ONNX: %w", err)
-	}
 
-	var botPath string
+	var bottomData []byte
 	if bp, _ := m.BottomTZPath(cfg.ModelDir); bp != "" {
-		botPath, err = prepareOnnx(bp, cfg.WorkDir, m.Short+"_bottom")
+		bottomData, err = readModel(bp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to prepare bottom model: %w", err)
+		}
+		if patched, changed, perr := PatchReduceMeanFp32(bottomData); perr == nil && changed {
+			bottomData = patched
 		}
 	}
 
@@ -229,14 +217,14 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 	mainCh := make(chan poolResult, 1)
 	go func() {
-		p, e := createSessions(env, onnxPath, so, nInst)
+		p, e := createSessions(env, raw, so, nInst)
 		mainCh <- poolResult{pool: p, err: e}
 	}()
 	var botCh chan poolResult
-	if botPath != "" {
+	if bottomData != nil {
 		botCh = make(chan poolResult, 1)
 		go func() {
-			p, e := createSessions(env, botPath, so, nInst)
+			p, e := createSessions(env, bottomData, so, nInst)
 			botCh <- poolResult{pool: p, err: e}
 		}()
 	}
@@ -329,8 +317,25 @@ func applyCUDNNAlgoFromEnv(so *SessionOptions) error {
 	return nil
 }
 
+// readModel reads a prepared .onnx file or unpacks a .tz file.
+func readModel(path string) ([]byte, error) {
+	Debugf("model file: %s", path)
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read model: %w", err)
+	}
+	if strings.HasSuffix(strings.ToLower(path), ".onnx") {
+		return b, nil
+	}
+	raw, err := Extract(b, Password)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unpack model: %w", err)
+	}
+	return raw, nil
+}
+
 // createSessions creates n identically configured sessions concurrently.
-func createSessions(env *Env, path string, so SessionOptions, n int) ([]*Session, error) {
+func createSessions(env *Env, modelData []byte, so SessionOptions, n int) ([]*Session, error) {
 	out := make([]*Session, n)
 	errs := make([]error, n)
 	var wg sync.WaitGroup
@@ -338,7 +343,7 @@ func createSessions(env *Env, path string, so SessionOptions, n int) ([]*Session
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			out[i], errs[i] = NewSession(env, path, so)
+			out[i], errs[i] = NewSessionFromBytes(env, modelData, so)
 		}(i)
 	}
 	wg.Wait()
@@ -353,28 +358,6 @@ func createSessions(env *Env, path string, so SessionOptions, n int) ([]*Session
 		}
 	}
 	return out, nil
-}
-
-// prepareOnnx unpacks a .tz file, applies the ReduceMean patch, writes the ONNX
-// file, and returns its path.
-func prepareOnnx(tzPath, workDir, name string) (string, error) {
-	b, err := os.ReadFile(tzPath)
-	if err != nil {
-		return "", err
-	}
-	raw, err := Extract(b, Password)
-	if err != nil {
-		return "", err
-	}
-	if p, changed, perr := PatchReduceMeanFp32(raw); perr == nil && changed {
-		raw = p
-	}
-	os.MkdirAll(workDir, 0o755)
-	p := filepath.Join(workDir, name+".onnx")
-	if err := os.WriteFile(p, raw, 0o644); err != nil {
-		return "", err
-	}
-	return p, nil
 }
 
 // Close releases every session.

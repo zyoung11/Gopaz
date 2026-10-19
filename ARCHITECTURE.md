@@ -96,8 +96,8 @@ frameWriter goroutine ── chan outFrame cap 4 ──> RGB24 ──> ffmpeg �
 
 ### 2.4 启动顺序
 
-1. 解析模型文件路径：根据 tile 尺寸、scale 和 `.tz` 命名规则定位。
-2. 解包 `.tz`，应用 ONNX 补丁，写入临时 ONNX。
+1. 解析模型文件路径：优先同名明文 `.onnx`，否则按 tile 尺寸、scale 和 `.tz` 命名规则定位。
+2. 读取明文 ONNX，或解包 `.tz`；应用 ONNX 补丁后直接从内存创建会话，不写临时 ONNX。
 3. 初始化 ORT 环境，创建会话池；Aion 额外创建底部模型会话池。
 4. 读取输入/输出元数据，构造参数张量范围。
 5. 构造增强或插帧 plan，启动解码、推理、编码。
@@ -109,6 +109,8 @@ frameWriter goroutine ── chan outFrame cap 4 ──> RGB24 ──> ffmpeg �
 ### 3.1 `.tz` 容器
 
 `.tz` 是一个 ZIP，压缩方法为 deflate，通用标志 bit0=1，即传统 ZipCrypto 加密。每个包恰好包含一个条目，解包后是标准 ONNX protobuf。密码硬编码在 `aiengine.dll`，实现位于 `tz.go`。
+
+`gopaz prepare` 可以把 `.tz` 转成同名明文 `.onnx`。`LoadRunner` 优先读取 `.onnx`，补丁只在内存应用；只有缺少 `.onnx` 时才解包 `.tz`。同名的 `.onnx` 必须是非空文件，否则回退到 `.tz`。
 
 解析流程：
 
@@ -190,7 +192,7 @@ CLI 与 Topaz 滑杆使用 -100..100，写入模型前除以 100 并 clamp 到 `
 | 对象 | 创建 | 释放 | 约束 |
 |---|---|---|---|
 | `Env` | `CreateEnv` | `ReleaseEnv` | 全局日志和线程池 |
-| `Session` | `CreateSession` | `ReleaseSession` | 持有模型和 CUDA arena |
+| `Session` | `CreateSession` 或 `CreateSessionFromArray` | `ReleaseSession` | 持有模型和 CUDA arena |
 | `Tensor` | `CreateTensorAsOrtValue` 或 `CreateTensorWithDataAsOrtValue` | `ReleaseValue` | `NewTensorRef` 依赖外部内存存活 |
 | `IOInfo` | 会话元数据 | 无 | 名称从 allocator 复制后释放原字符串 |
 

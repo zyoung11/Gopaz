@@ -121,7 +121,7 @@ func e2eUpscale(t *testing.T, env e2eEnv, src, out, key string, scale, start, en
 		Input: src, Output: out, Ffmpeg: env.ffmpeg, Ffprobe: env.ffprobe,
 		ModelDir: env.modelDir, Model: m, Scale: scale,
 		Params: map[string]float64{}, GPU: env.gpu, Threads: 4, Overlap: 0,
-		KColor: true, SceneThreshold: 6.5, WorkDir: t.TempDir(),
+		KColor: true, SceneThreshold: 6.5,
 		StartFrame: start, EndFrame: end,
 		Encode:    EncodeOptions{EncoderID: "ffv1-10bit-420", RateControl: "cq", Quality: "High"},
 		AudioMode: "none",
@@ -141,7 +141,7 @@ func e2eInterpolate(t *testing.T, env e2eEnv, src, out, key string, sensitivity,
 		Input: src, Output: out, Ffmpeg: env.ffmpeg, Ffprobe: env.ffprobe,
 		ModelDir: env.modelDir, Model: m, Factor: 2,
 		RDT: -1, Sensitivity: sensitivity, Instances: 1, VramGB: 2, DeviceVRAMGB: 2,
-		GPU: env.gpu, Threads: 4, Overlap: 0, WorkDir: t.TempDir(),
+		GPU: env.gpu, Threads: 4, Overlap: 0,
 		StartFrame: start, EndFrame: end,
 		Encode:    EncodeOptions{EncoderID: "ffv1-10bit-420", RateControl: "cq", Quality: "High"},
 		AudioMode: "none",
@@ -254,7 +254,7 @@ func TestE2EProteusTile(t *testing.T) {
 	r, err := LoadRunner(UpscaleConfig{
 		Model: m, ModelDir: env.modelDir, Scale: 2, FW: 1280, FH: 720,
 		Params: map[string]float64{}, Overlap: 0, GPU: env.gpu, Threads: 4,
-		Instances: 1, WorkDir: t.TempDir(),
+		Instances: 1,
 	})
 	if err != nil {
 		t.Fatalf("load runner: %v", err)

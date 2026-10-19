@@ -30,7 +30,6 @@ type InterpJob struct {
 	GPU                  int
 	Threads              int
 	Overlap              int
-	WorkDir              string
 	StartFrame, EndFrame int
 	Encode               EncodeOptions
 	AudioMode            string
@@ -79,7 +78,7 @@ func RunInterpolate(job InterpJob) error {
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
 		FW: fw, FH: fh, Params: map[string]float64{}, Overlap: job.Overlap, Instances: job.Instances, VramGB: job.VramGB,
-		DeviceVRAMGB: job.DeviceVRAMGB, GPU: job.GPU, Threads: job.Threads, WorkDir: job.WorkDir, Workers: job.Workers,
+		DeviceVRAMGB: job.DeviceVRAMGB, GPU: job.GPU, Threads: job.Threads, Workers: job.Workers,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {

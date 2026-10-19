@@ -27,6 +27,8 @@ func main() {
 		err = cmdInterpolate(os.Args[2:])
 	case "serve":
 		err = cmdServe(os.Args[2:])
+	case "prepare":
+		err = cmdPrepare(os.Args[2:])
 	case "models":
 		cmdModels()
 	case "encoders":
@@ -52,6 +54,7 @@ func usage() {
   gopaz serve        -port 8765 -no-open  仅启动 Web 界面
   gopaz upscale      -i <输入> -o <输出> --model <模型> --scale <1|2|4> [参数...]
   gopaz interpolate  -i <输入> -o <输出> --model <模型> --factor <N> [参数...]
+  gopaz prepare      把 .tz 解压成明文 .onnx
   gopaz models       列出可用模型
   gopaz encoders     列出可用编码器
 
@@ -96,7 +99,6 @@ func cmdUpscale(args []string) error {
 	sceneThreshold := fs.Float64("scene-threshold", 6.5, "场景切换阈值")
 	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
 	ffprobe := fs.String("ffprobe", "", "ffprobe 路径")
-	work := fs.String("workdir", "", "临时目录")
 	start := fs.Int("start", -1, "起始帧")
 	end := fs.Int("end", -1, "结束帧")
 	encID := fs.String("encoder", "h265-main-win-nvidia", "视频编码器")
@@ -142,7 +144,7 @@ func cmdUpscale(args []string) error {
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
 		Params: params, GPU: *gpu, Threads: *threads, Workers: *workers, VramGB: *vram, Overlap: *overlap,
 		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
-		WorkDir: *work, StartFrame: *start, EndFrame: *end,
+		StartFrame: *start, EndFrame: *end,
 		Encode:    EncodeOptions{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
 		AudioMode: *audioCodec, AudioBitrate: *audioBitrate,
 	}
@@ -166,7 +168,6 @@ func cmdInterpolate(args []string) error {
 	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
 	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
 	ffprobe := fs.String("ffprobe", "", "ffprobe 路径")
-	work := fs.String("workdir", "", "临时目录")
 	start := fs.Int("start", -1, "起始帧")
 	end := fs.Int("end", -1, "结束帧")
 	encID := fs.String("encoder", "h265-main-win-nvidia", "视频编码器")
@@ -191,7 +192,7 @@ func cmdInterpolate(args []string) error {
 	job := InterpJob{
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
-		GPU: *gpu, Threads: *threads, Overlap: *overlap, WorkDir: *work,
+		GPU: *gpu, Threads: *threads, Overlap: *overlap,
 		Instances: *instances, Workers: *workers, RDT: *rdt, Sensitivity: *sensitivity, VramGB: *vram, DeviceVRAMGB: *gpuVRAM,
 		StartFrame: *start, EndFrame: *end,
 		Encode:    EncodeOptions{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},

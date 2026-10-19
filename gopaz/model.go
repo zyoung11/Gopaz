@@ -143,7 +143,8 @@ func ModelKeys() []string {
 	return []string{"proteus", "gaia", "gaia-cg", "apollo", "aion"}
 }
 
-// TZPath locates the .tz file for the given tile size and scale.
+// TZPath locates the .onnx or .tz file for the given tile size and scale.
+// Prepared ONNX files take precedence over encrypted .tz files.
 // Passing tileW and tileH as zero selects a single-file model such as Aion.
 func (m *Model) TZPath(modelDir string, tileW, tileH, scale int) (string, error) {
 	return m.tzPathNamed(m.SingleFile, modelDir, tileW, tileH, scale)
@@ -159,11 +160,7 @@ func (m *Model) BottomTZPath(modelDir string) (string, error) {
 
 func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale int) (string, error) {
 	if single != "" {
-		p := filepath.Join(modelDir, single)
-		if _, err := os.Stat(p); err != nil {
-			return "", fmt.Errorf("model file missing: %s", p)
-		}
-		return p, nil
+		return modelPathNamed(modelDir, single)
 	}
 	var name string
 	if m.FileHasScale {
@@ -171,11 +168,20 @@ func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale 
 	} else {
 		name = fmt.Sprintf("%s-fp16-%dx%d-ox.tz", m.FilePrefix, tileH, tileW)
 	}
-	p := filepath.Join(modelDir, name)
-	if _, err := os.Stat(p); err != nil {
-		return "", fmt.Errorf("model file missing: %s", p)
+	return modelPathNamed(modelDir, name)
+}
+
+// modelPathNamed prefers a prepared .onnx file over its .tz source.
+func modelPathNamed(modelDir, name string) (string, error) {
+	tz := filepath.Join(modelDir, name)
+	onnx := strings.TrimSuffix(tz, ".tz") + ".onnx"
+	if st, err := os.Stat(onnx); err == nil && st.Size() > 0 {
+		return onnx, nil
 	}
-	return p, nil
+	if _, err := os.Stat(tz); err == nil {
+		return tz, nil
+	}
+	return "", fmt.Errorf("model file missing: %s or %s", onnx, tz)
 }
 
 // HasParam reports whether the model supports the given parameter key.

@@ -226,29 +226,59 @@ func DefaultSessionOptions() SessionOptions {
 	}
 }
 
+// buildSessionOptions creates the ORT session options used by both file and
+// memory session creation.
+func buildSessionOptions(opt SessionOptions) (uintptr, error) {
+	var so uintptr
+	if err := check(call(ortIdxCreateSessionOptions, uintptr(unsafe.Pointer(&so))), "CreateSessionOptions"); err != nil {
+		return 0, err
+	}
+	call(ortIdxSetIntraOpNumThreads, so, uintptr(opt.IntraOpThreads))
+	call(ortIdxSetSessionGraphOptimizationLevel, so, uintptr(opt.GraphOptLevel))
+	if opt.CUDA {
+		if err := appendCUDA(so, opt); err != nil {
+			call(ortIdxReleaseSessionOptions, so)
+			return 0, err
+		}
+	}
+	return so, nil
+}
+
 // NewSession loads an ONNX model from a UTF-16 path, as required by ORTCHAR_T
 // on Windows.
 func NewSession(env *Env, modelPath string, opt SessionOptions) (*Session, error) {
-	var so uintptr
-	if err := check(call(ortIdxCreateSessionOptions, uintptr(unsafe.Pointer(&so))), "CreateSessionOptions"); err != nil {
+	so, err := buildSessionOptions(opt)
+	if err != nil {
 		return nil, err
 	}
 	defer call(ortIdxReleaseSessionOptions, so)
-
-	call(ortIdxSetIntraOpNumThreads, so, uintptr(opt.IntraOpThreads))
-	call(ortIdxSetSessionGraphOptimizationLevel, so, uintptr(opt.GraphOptLevel))
-
-	if opt.CUDA {
-		if err := appendCUDA(so, opt); err != nil {
-			return nil, err
-		}
-	}
 
 	var p uintptr
 	pathPtr := wstr(modelPath)
 	st := call(ortIdxCreateSession, uintptr(unsafe.Pointer(env.ptr)), uintptr(unsafe.Pointer(pathPtr)), so, uintptr(unsafe.Pointer(&p)))
 	runtime.KeepAlive(pathPtr)
 	if err := check(st, "CreateSession"); err != nil {
+		return nil, err
+	}
+	return &Session{ptr: p}, nil
+}
+
+// NewSessionFromBytes creates a session directly from ONNX bytes, avoiding a
+// temporary model file.
+func NewSessionFromBytes(env *Env, modelData []byte, opt SessionOptions) (*Session, error) {
+	if len(modelData) == 0 {
+		return nil, fmt.Errorf("empty ONNX model")
+	}
+	so, err := buildSessionOptions(opt)
+	if err != nil {
+		return nil, err
+	}
+	defer call(ortIdxReleaseSessionOptions, so)
+
+	var p uintptr
+	st := call(ortIdxCreateSessionFromArray, uintptr(unsafe.Pointer(env.ptr)), uintptr(unsafe.Pointer(&modelData[0])), uintptr(len(modelData)), so, uintptr(unsafe.Pointer(&p)))
+	runtime.KeepAlive(modelData)
+	if err := check(st, "CreateSessionFromArray"); err != nil {
 		return nil, err
 	}
 	return &Session{ptr: p}, nil
