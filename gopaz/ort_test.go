@@ -61,3 +61,23 @@ func TestOpenVINOProviderOptions(t *testing.T) {
 		t.Fatal("CPU should not set inference precision")
 	}
 }
+
+// TestTensorRTProviderOptions checks TensorRT build and cache options.
+func TestTensorRTProviderOptions(t *testing.T) {
+	opt := DefaultSessionOptions()
+	opt.TRTCacheDir = "/cache/trt"
+	opt.TRTCachePrefix = "aion"
+	vals := tensorRTProviderOptions(opt)
+	if vals["trt_fp16_enable"] != "1" {
+		t.Fatalf("fp16 = %q", vals["trt_fp16_enable"])
+	}
+	if vals["trt_builder_optimization_level"] != "1" {
+		t.Fatalf("builder level = %q", vals["trt_builder_optimization_level"])
+	}
+	if vals["trt_max_workspace_size"] != "2147483648" {
+		t.Fatalf("workspace = %q", vals["trt_max_workspace_size"])
+	}
+	if vals["trt_engine_cache_enable"] != "1" || vals["trt_engine_cache_prefix"] != "aion" {
+		t.Fatalf("cache options = %v", vals)
+	}
+}

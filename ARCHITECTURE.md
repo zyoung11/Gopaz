@@ -596,12 +596,14 @@ CUDA 增强路径默认 2 个 worker 共享一个会话；权重和归一化图�
 | 后端 | 1080p 墙钟 | 4K 墙钟 | 备注 |
 |---|---:|---:|---|
 | CUDA | 6.9s | 13.0s | 1080p 2 worker |
-| TensorRT 热缓存 | 6.7s | 12.7s | 首次构建另行计算 |
+| TensorRT 热缓存 | 6.7s | 12.3s | 首次构建约 45s |
 | DirectML Intel | 15.6s | 51.3s | 单 worker |
 | OpenVINO GPU 静态 shape | 11.2s | 32.6s | 单 worker，首次编译 39.3s |
 | OpenVINO GPU 动态 shape | 22.2s | 80.4s | 优化前 |
 
 Aion 的 bottom 模型约占总推理时间的一半，固定输入尺寸后 OpenVINO 的 bottom 和 main 都降到原来的三分之一左右。1080p 静态 shape 的输出与动态 shape 的 PSNR 约 49.8dB，4K 约 50.6dB。
+
+TensorRT 默认使用 builder level 1 和 2GB workspace。实测 level 1 把 Aion 冷构建从约 85s 降到约 45s，热推理与 level 3 相同；level 3 和 level 5 没有推理收益，只增加构建时间。level 0 构建时间相近但推理慢约 5 倍。Aion 推理阶段 nvidia-smi 的 SM 占用为 87-99%，运行期平均 50% 主要来自引擎加载、预热和编码；增加 TRT 会话、batch 或改变 tile 尺寸都没有提升。
 
 ### 10.4 瓶颈分析
 
@@ -641,6 +643,7 @@ Aion 的 bottom 模型约占总推理时间的一半，固定输入尺寸后 Ope
 - Aion 输入尺寸：OpenVINO 用 `AddFreeDimensionOverrideByName` 固定当前 tile 尺寸，首次每个尺寸需要重新编译；DirectML 保持动态尺寸，静态尺寸在 Intel 核显上实测更慢。
 - 后端启动：TensorRT 每个新 tile shape 首次构建 engine，Aion 4K 约 1-2 分钟；固定块模型在会话创建时构建，动态模型在预热时构建；OpenVINO NPU 首次编译每个模型/shape 可能数分钟。日志会分别提示构建和就绪耗时。
 - TensorRT 缓存：engine 按模型文件名和 tile 尺寸加 cache prefix。Apollo 的不同 tile 模型 graph hash 相同，缺少 prefix 时会错误复用其他尺寸的 engine 并报 `setInputShape` 失败。
+- TensorRT 构建：默认 builder level 1，冷启动约减半；level 3/5 不提升 Aion 推理速度，level 0 会明显变慢。
 - DirectML 设备：`device_id` 是 DXGI 枚举顺序，0 不保证是核显；用 `gopaz devices` 查看名称。
 - DirectML NPU：DirectML 基于 D3D12，当前 Intel NPU 不作为 D3D12 适配器暴露，NPU 只能走 OpenVINO。
 - OpenVINO NPU：Proteus/Gaia/Apollo 可用，Aion 因 vpux 编译器重名检查失败会回退 OpenVINO CPU；aiob 首次编译较慢。

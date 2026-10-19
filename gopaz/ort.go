@@ -216,17 +216,13 @@ func keyValuePointers(vals map[string]string) ([]*byte, []*byte, []uintptr, []ui
 	return keys, values, keyPtrs, valPtrs
 }
 
-// appendTensorRT appends the TensorRT execution provider with CUDA fallback.
-func appendTensorRT(so uintptr, opt SessionOptions) error {
-	var provider uintptr
-	if err := check(call(ortIdxCreateTensorRTProviderOptions, uintptr(unsafe.Pointer(&provider))), "CreateTensorRTProviderOptions"); err != nil {
-		return err
-	}
-	defer call(ortIdxReleaseTensorRTProviderOptions, provider)
+// tensorRTProviderOptions builds the TensorRT execution provider options.
+func tensorRTProviderOptions(opt SessionOptions) map[string]string {
 	vals := map[string]string{
 		"device_id":                      strconv.Itoa(opt.CUDADeviceID),
 		"trt_fp16_enable":                "1",
-		"trt_builder_optimization_level": "3",
+		"trt_builder_optimization_level": "1",
+		"trt_max_workspace_size":         "2147483648",
 	}
 	if opt.TRTCacheDir != "" {
 		vals["trt_engine_cache_enable"] = "1"
@@ -237,6 +233,17 @@ func appendTensorRT(so uintptr, opt SessionOptions) error {
 	if opt.TRTCachePrefix != "" {
 		vals["trt_engine_cache_prefix"] = opt.TRTCachePrefix
 	}
+	return vals
+}
+
+// appendTensorRT appends the TensorRT execution provider with CUDA fallback.
+func appendTensorRT(so uintptr, opt SessionOptions) error {
+	var provider uintptr
+	if err := check(call(ortIdxCreateTensorRTProviderOptions, uintptr(unsafe.Pointer(&provider))), "CreateTensorRTProviderOptions"); err != nil {
+		return err
+	}
+	defer call(ortIdxReleaseTensorRTProviderOptions, provider)
+	vals := tensorRTProviderOptions(opt)
 	keys, values, keyPtrs, valPtrs := keyValuePointers(vals)
 	st := call(ortIdxUpdateTensorRTProviderOptions, provider,
 		uintptr(unsafe.Pointer(&keyPtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(len(vals)))
