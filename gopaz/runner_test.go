@@ -48,3 +48,12 @@ func TestAionFreeDims(t *testing.T) {
 		t.Fatalf("bottom dims = %v", bottom)
 	}
 }
+
+// TestCacheRootOverride checks the cache directory environment override.
+func TestCacheRootOverride(t *testing.T) {
+	want := filepath.Join("portable", "cache")
+	t.Setenv("GOPAZ_CACHE_DIR", want)
+	if got := cacheRoot(); got != want {
+		t.Fatalf("cacheRoot = %q, want %q", got, want)
+	}
+}

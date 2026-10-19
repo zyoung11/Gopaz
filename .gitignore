@@ -1,4 +1,5 @@
 work/
+cache/
 gopaz/ort-dll/
 gopaz/gopaz.exe
 *.exe

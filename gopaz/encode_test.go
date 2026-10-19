@@ -25,3 +25,10 @@ func TestSoftwareEncoderArgs(t *testing.T) {
 		t.Fatalf("args unexpectedly contain h264_nvenc: %v", args)
 	}
 }
+
+// TestDefaultEncoderFallback checks the software fallback when probing fails.
+func TestDefaultEncoderFallback(t *testing.T) {
+	if got := defaultEncoder(""); got != "h264-main-sw" {
+		t.Fatalf("defaultEncoder fallback = %q", got)
+	}
+}

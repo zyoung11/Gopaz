@@ -676,8 +676,12 @@ func tensorToFrameTyped(t *Tensor, w, h int, elemType int) (*Frame, error) {
 	return f, nil
 }
 
-// cacheRoot returns the per-user cache directory for provider artifacts.
+// cacheRoot returns the provider cache directory. GOPAZ_CACHE_DIR overrides
+// the default per-user cache directory.
 func cacheRoot() string {
+	if dir := strings.TrimSpace(os.Getenv("GOPAZ_CACHE_DIR")); dir != "" {
+		return dir
+	}
 	dir, err := os.UserCacheDir()
 	if err != nil {
 		dir = os.TempDir()

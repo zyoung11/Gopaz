@@ -228,7 +228,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	out.Defaults = defaultsInfo{
-		Encoder: "h265-main-win-nvidia", Quality: "High",
+		Encoder: defaultEncoder(localTool("ffmpeg")), Quality: "High",
 		RateControl: "cq", AudioCodec: "copy", AudioBitrate: 320,
 	}
 	dml := dmlDevices()
@@ -240,8 +240,9 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		{ID: "tensorrt", Display: "TensorRT"},
 		{ID: "dml", Display: "DirectML", Devices: dml},
 		{ID: "openvino", Display: "OpenVINO", Devices: []deviceInfo{
-			{ID: "GPU.0", Display: "Intel GPU 0"},
-			{ID: "NPU", Display: "Intel NPU"},
+			{ID: "GPU.0", Display: "GPU 0"},
+			{ID: "GPU.1", Display: "GPU 1"},
+			{ID: "NPU", Display: "NPU"},
 			{ID: "CPU", Display: "CPU"},
 		}},
 	}

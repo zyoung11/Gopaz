@@ -60,7 +60,7 @@ type jobRequest struct {
 func defaultJobRequest() jobRequest {
 	return jobRequest{
 		Mode: "enhance", Model: "proteus", Scale: 2, Factor: 2,
-		Encoder: "h265-main-win-nvidia", Quality: "High", RateControl: "cq",
+		Encoder: "", Quality: "High", RateControl: "cq",
 		AudioCodec: "copy", GPU: -2, Provider: "cuda", KColor: true, SceneThreshold: 6.5,
 		StartFrame: -1, EndFrame: -1, Sensitivity: 10, RDT: -1,
 	}
@@ -189,6 +189,9 @@ func resolveOutput(req *jobRequest) (*jobPlan, error) {
 	}
 	if mode == "interp" && req.Factor < 2 {
 		return nil, errors.New("slow motion factor must be at least 2")
+	}
+	if req.Encoder == "" {
+		req.Encoder = defaultEncoder(localTool("ffmpeg"))
 	}
 	e, err := GetEncoder(req.Encoder)
 	if err != nil {
@@ -357,17 +360,34 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 	return plan, nil
 }
 
+// defaultEncoder selects NVENC when a probe encode succeeds and falls back to
+// software H.264 otherwise.
+func defaultEncoder(ffmpeg string) string {
+	if probeEncoder(ffmpeg, "hevc_nvenc") {
+		return "h265-main-win-nvidia"
+	}
+	if probeEncoder(ffmpeg, "h264_nvenc") {
+		return "h264-main-win-nvidia"
+	}
+	return "h264-main-sw"
+}
+
+// probeEncoder checks whether an ffmpeg encoder can encode one small frame.
+func probeEncoder(ffmpeg, name string) bool {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error",
+		"-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.04",
+		"-frames:v", "1", "-c:v", name, "-pix_fmt", "yuv420p", "-f", "null", "-")
+	return cmd.Run() == nil
+}
+
 // choosePreviewEncoder picks NVENC when a probe encode succeeds and falls back
 // to libx264 otherwise.
 func choosePreviewEncoder(ffmpeg string) string {
 	previewEncOnce.Do(func() {
 		previewEncID = "h264-main-sw"
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error",
-			"-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.04",
-			"-frames:v", "1", "-c:v", "h264_nvenc", "-pix_fmt", "yuv420p", "-f", "null", "-")
-		if err := cmd.Run(); err == nil {
+		if probeEncoder(ffmpeg, "h264_nvenc") {
 			previewEncID = "h264-main-win-nvidia"
 		}
 	})

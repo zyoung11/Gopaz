@@ -124,7 +124,7 @@ func usage() {
 	helpOption("--ffprobe <path>", "ffprobe path (defaults to the executable directory or PATH)")
 	fmt.Println()
 	helpHeader("Output options:")
-	helpOption("--encoder <id>", "Video encoder from gopaz encoders (default h265-main-win-nvidia)")
+	helpOption("--encoder <id>", "Video encoder from gopaz encoders (default auto)")
 	helpOption("--quality <name>", "Quality preset High, Mid, Low (default High)")
 	helpOption("--qp <n>", "Constant QP override")
 	helpOption("--rate-control <mode>", "Rate control cq, cbr, vbr (default cq)")
@@ -152,7 +152,7 @@ func cmdUpscale(args []string) error {
 	ffprobe := fs.String("ffprobe", "", "ffprobe path")
 	start := fs.Int("start", -1, "first frame")
 	end := fs.Int("end", -1, "last frame")
-	encID := fs.String("encoder", "h265-main-win-nvidia", "video encoder")
+	encID := fs.String("encoder", "auto", "video encoder, auto selects NVENC or software")
 	quality := fs.String("quality", "High", "quality preset High/Mid/Low")
 	qp := fs.Int("qp", 0, "constant QP override")
 	rc := fs.String("rate-control", "cq", "rate control cq/cbr/vbr")
@@ -181,6 +181,9 @@ func cmdUpscale(args []string) error {
 		return fmt.Errorf("model %s does not support scale %d; available: %v", *mk, *scale, m.Scales)
 	}
 	ff, fp := resolveFfmpeg(*ffmpeg, *ffprobe)
+	if *encID == "auto" {
+		*encID = defaultEncoder(ff)
+	}
 	params := map[string]float64{
 		"denoise": *denoise, "detail": *detail, "dehalo": *dehalo,
 		"sharpen": *sharpen, "fix-compression": *fixComp, "deblur": *deblur,
@@ -224,7 +227,7 @@ func cmdInterpolate(args []string) error {
 	ffprobe := fs.String("ffprobe", "", "ffprobe path")
 	start := fs.Int("start", -1, "first frame")
 	end := fs.Int("end", -1, "last frame")
-	encID := fs.String("encoder", "h265-main-win-nvidia", "video encoder")
+	encID := fs.String("encoder", "auto", "video encoder, auto selects NVENC or software")
 	quality := fs.String("quality", "High", "quality preset High/Mid/Low")
 	qp := fs.Int("qp", 0, "constant QP override")
 	rc := fs.String("rate-control", "cq", "rate control cq/cbr/vbr")
@@ -243,6 +246,9 @@ func cmdInterpolate(args []string) error {
 		return fmt.Errorf("model %s is not an interpolation model", *mk)
 	}
 	ff, fp := resolveFfmpeg(*ffmpeg, *ffprobe)
+	if *encID == "auto" {
+		*encID = defaultEncoder(ff)
+	}
 	job := InterpJob{
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
