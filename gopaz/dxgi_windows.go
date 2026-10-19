@@ -93,6 +93,7 @@ func createDXGIFactory1() (uintptr, error) {
 
 // comCall invokes one COM vtable method.
 //
+//go:uintptrescapes
 //go:nocheckptr
 func comCall(iface, method uintptr, args ...uintptr) (uintptr, uintptr, syscall.Errno) {
 	vtable := *(*uintptr)(unsafe.Pointer(iface))

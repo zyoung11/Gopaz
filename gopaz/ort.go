@@ -77,6 +77,9 @@ func apiFn(idx int) uintptr {
 	return *(*uintptr)(unsafe.Pointer(apiPtr + uintptr(idx)*8))
 }
 
+// call invokes an ORT API function by index.
+//
+//go:uintptrescapes
 func call(idx int, args ...uintptr) uintptr {
 	r, _, _ := syscall.SyscallN(apiFn(idx), args...)
 	return r
