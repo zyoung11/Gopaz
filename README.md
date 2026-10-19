@@ -208,7 +208,7 @@ TensorRT 和 DirectML 当前强制单线程推理，`--workers` 和 `--instances
 ### 首次运行与缓存
 
 - TensorRT 首次为当前模型文件和 tile 尺寸构建 engine：固定块模型在会话创建时构建，Aion 这类动态尺寸模型在预热时构建。Aion 4K 首次通常需要 1-2 分钟，日志会分别显示 `TensorRT session ready` 或 `Warming up TensorRT engine` 的耗时。engine 按模型文件名和 tile 尺寸分开缓存，位于 `%LOCALAPPDATA%\Gopaz\tensorrt`；换分辨率或 `--gpu-vram` 会改变 tile 尺寸并重建。升级到带 cache prefix 的版本后旧缓存不会命中，首次运行会重建一次。
-- OpenVINO NPU 在创建会话时编译模型，首次每个模型和尺寸可能需要数分钟，日志会在编译前提示；之后从 `%LOCALAPPDATA%\Gopaz\openvino` 加载。OpenVINO GPU/NPU 默认使用 FP16，CPU 保持 FP32。
+- OpenVINO NPU 在创建会话时编译模型，首次每个模型和尺寸可能需要数分钟，日志会在编译前提示；之后从 `%LOCALAPPDATA%\Gopaz\openvino` 加载。OpenVINO GPU/NPU 默认使用 FP16，CPU 保持 FP32。Aion 在 OpenVINO 上会按当前 tile 固定输入尺寸，避免动态 shape 的开销；首次每个新尺寸需要重新编译。
 - DirectML 的 `device_id` 按 DXGI 适配器顺序排列，`gopaz devices` 会显示实际名称。0 通常是默认显示适配器，不保证是核显。
 
 ## 环境变量
@@ -218,7 +218,7 @@ TensorRT 和 DirectML 当前强制单线程推理，`--workers` 和 `--instances
 | `GOPAZ_MODEL_DIR` | 模型目录，包含 `.onnx` 或 `.tz` |
 | `GOPAZ_ORT_DLL` | onnxruntime.dll 路径 |
 | `GOPAZ_CUDNN_ALGO` | cuDNN 卷积算法 exhaustive、heuristic 或 default |
-| `GOPAZ_DEBUG=1` | 输出诊断信息 |
+| `GOPAZ_DEBUG=1` | 输出诊断信息，包括 Aion 的 bottom/main/merge 耗时 |
 | `GOPAZ_PROGRESS=json` | 以 JSON 行输出日志和进度，供 Web 界面读取 |
 
 注意：Topaz 自己的 `TVAI_MODEL_DIR` 是元数据 JSON 目录，本工具的语义不同。

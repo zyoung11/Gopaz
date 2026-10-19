@@ -27,3 +27,24 @@ func TestTRTCachePrefix(t *testing.T) {
 		t.Fatalf("different tile models share prefix %q", a)
 	}
 }
+
+// TestAionFreeDims checks fixed Aion dimensions for main and bottom models.
+func TestAionFreeDims(t *testing.T) {
+	main := aionFreeDims(3840, 576, true)
+	want := map[string]int64{
+		"bsize": 1, "fheight": 576, "fwidth": 3840,
+		"fheight2": 144, "fwidth2": 960,
+	}
+	for k, v := range want {
+		if main[k] != v {
+			t.Fatalf("%s = %d, want %d", k, main[k], v)
+		}
+	}
+	bottom := aionFreeDims(3840, 576, false)
+	if _, ok := bottom["fheight2"]; ok {
+		t.Fatal("bottom model should not set in8x dimensions")
+	}
+	if bottom["fheight"] != 576 || bottom["fwidth"] != 3840 {
+		t.Fatalf("bottom dims = %v", bottom)
+	}
+}

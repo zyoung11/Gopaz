@@ -326,6 +326,8 @@ type SessionOptions struct {
 	TRTCachePrefix string
 	OVCacheDir     string
 	DMLDeviceID    int
+	// FreeDims fixes named ONNX dimensions before session creation.
+	FreeDims map[string]int64
 }
 
 // DefaultSessionOptions returns the default configuration with CUDA enabled and
@@ -342,6 +344,14 @@ func DefaultSessionOptions() SessionOptions {
 	}
 }
 
+// addFreeDimensionOverride fixes a named ONNX dimension for session creation.
+func addFreeDimensionOverride(so uintptr, name string, dim int64) error {
+	cname := cstr(name)
+	st := call(ortIdxAddFreeDimensionOverrideByName, so, uintptr(unsafe.Pointer(cname)), uintptr(dim))
+	runtime.KeepAlive(cname)
+	return check(st, "AddFreeDimensionOverrideByName")
+}
+
 // buildSessionOptions creates the ORT session options used by both file and
 // memory session creation.
 func buildSessionOptions(opt SessionOptions) (uintptr, error) {
@@ -351,6 +361,12 @@ func buildSessionOptions(opt SessionOptions) (uintptr, error) {
 	}
 	call(ortIdxSetIntraOpNumThreads, so, uintptr(opt.IntraOpThreads))
 	call(ortIdxSetSessionGraphOptimizationLevel, so, uintptr(opt.GraphOptLevel))
+	for name, dim := range opt.FreeDims {
+		if err := addFreeDimensionOverride(so, name, dim); err != nil {
+			call(ortIdxReleaseSessionOptions, so)
+			return 0, err
+		}
+	}
 	switch opt.Provider {
 	case ProviderTensorRT:
 		if err := appendTensorRT(so, opt); err != nil {

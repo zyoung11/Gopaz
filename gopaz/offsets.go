@@ -61,4 +61,5 @@ const (
 	ortIdxCreateTensorRTProviderOptions                     = 171
 	ortIdxUpdateTensorRTProviderOptions                     = 172
 	ortIdxReleaseTensorRTProviderOptions                    = 174
+	ortIdxAddFreeDimensionOverrideByName                    = 124
 )

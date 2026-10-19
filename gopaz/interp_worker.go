@@ -69,7 +69,7 @@ func (w *interpWorker) run(window []*Frame, tiles []tilePos) (*Tensor, error) {
 	if w.bot != nil {
 		t0 := time.Now()
 		outs, err := w.bot.Run(names, tensors, []string{"out"})
-		w.r.addInfer(time.Since(t0).Nanoseconds())
+		w.r.addBottomInfer(time.Since(t0).Nanoseconds())
 		if err != nil {
 			return nil, err
 		}
@@ -93,7 +93,7 @@ func (w *interpWorker) run(window []*Frame, tiles []tilePos) (*Tensor, error) {
 	}
 	t0 := time.Now()
 	outs, err := w.main.Run(names, tensors, []string{w.r.outputName()})
-	w.r.addInfer(time.Since(t0).Nanoseconds())
+	w.r.addMainInfer(time.Since(t0).Nanoseconds())
 	if err != nil {
 		return nil, err
 	}

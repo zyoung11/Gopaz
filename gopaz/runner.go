@@ -65,7 +65,11 @@ type Runner struct {
 	bottomOutType int
 	// inferNanos accumulates inference time in nanoseconds for diagnostics.
 	inferNanos int64
-	workers    int
+	// bottomNanos and mainNanos split interpolation inference time.
+	bottomNanos int64
+	mainNanos   int64
+	mergeNanos  int64
+	workers     int
 }
 
 // outputName returns the tensor name of the model's first output.
@@ -267,6 +271,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if cfg.Threads > 0 {
 		so.IntraOpThreads = cfg.Threads
 	}
+	if m.Key == "aion" && provider == ProviderOpenVINO {
+		so.FreeDims = aionFreeDims(tw, th, true)
+	}
 	sessionStart := time.Now()
 	if provider == ProviderOpenVINO {
 		if strings.EqualFold(device, "NPU") {
@@ -285,6 +292,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	botSO := so
 	if bottomPath != "" {
 		botSO.TRTCachePrefix = trtCachePrefix(bottomPath)
+	}
+	if m.Key == "aion" && provider == ProviderOpenVINO {
+		botSO.FreeDims = aionFreeDims(tw, th, false)
 	}
 	mainCh := make(chan poolResult, 1)
 	go func() {
@@ -585,9 +595,29 @@ func (r *Runner) addInfer(ns int64) {
 	atomic.AddInt64(&r.inferNanos, ns)
 }
 
+// addBottomInfer accumulates bottom-model inference nanoseconds.
+func (r *Runner) addBottomInfer(ns int64) {
+	atomic.AddInt64(&r.inferNanos, ns)
+	atomic.AddInt64(&r.bottomNanos, ns)
+}
+
+// addMainInfer accumulates main-model inference nanoseconds.
+func (r *Runner) addMainInfer(ns int64) {
+	atomic.AddInt64(&r.inferNanos, ns)
+	atomic.AddInt64(&r.mainNanos, ns)
+}
+
+// addMerge accumulates batch merge nanoseconds.
+func (r *Runner) addMerge(ns int64) {
+	atomic.AddInt64(&r.mergeNanos, ns)
+}
+
 // ResetInferTiming clears accumulated inference time after a warmup.
 func (r *Runner) ResetInferTiming() {
 	atomic.StoreInt64(&r.inferNanos, 0)
+	atomic.StoreInt64(&r.bottomNanos, 0)
+	atomic.StoreInt64(&r.mainNanos, 0)
+	atomic.StoreInt64(&r.mergeNanos, 0)
 }
 
 // extractHRTile extracts the matching tile from the previous output as hr_prev.
@@ -659,4 +689,18 @@ func cacheRoot() string {
 func trtCachePrefix(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// aionFreeDims returns the fixed Aion dimensions for the current tile.
+func aionFreeDims(tw, th int, withIn8x bool) map[string]int64 {
+	dims := map[string]int64{
+		"bsize":   1,
+		"fheight": int64(th),
+		"fwidth":  int64(tw),
+	}
+	if withIn8x {
+		dims["fheight2"] = int64(th / 4)
+		dims["fwidth2"] = int64(tw / 4)
+	}
+	return dims
 }

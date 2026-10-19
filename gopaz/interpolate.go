@@ -272,6 +272,9 @@ func RunInterpolate(job InterpJob) error {
 	}
 	wall := time.Since(startAll).Seconds()
 	Infof("Timing: total %.1fs, inference %.1fs (%.0f%%), other %.1fs", wall, float64(r.inferNanos)/1e9, float64(r.inferNanos)/1e9/wall*100, wall-float64(r.inferNanos)/1e9)
+	if r.bottomNanos > 0 {
+		Debugf("Inference detail: bottom %.1fs, main %.1fs, merge %.1fs", float64(r.bottomNanos)/1e9, float64(r.mainNanos)/1e9, float64(r.mergeNanos)/1e9)
+	}
 	if dupFrames > 0 {
 		Infof("Replaced %d duplicate frames (rdt=%.4f)", dupFrames, rdt)
 	}
@@ -369,8 +372,15 @@ func warmupInterp(r *Runner) error {
 	return nil
 }
 
+// interpMergeJob carries one batch output to the merge stage.
+type interpMergeJob struct {
+	out   *Tensor
+	view  rawView
+	tiles []tilePos
+}
+
 // processInterpInterval runs inference once per slowdown interval and blends
-// every required subframe from that single result.
+// every needed subframe from that single result.
 func processInterpInterval(r *Runner, workers []*interpWorker, window []*Frame, unique []int, plan *interpPlan) ([]*Frame, error) {
 	canvases := make([]*Frame, len(unique))
 	for i := range canvases {
@@ -386,8 +396,9 @@ func processInterpInterval(r *Runner, workers []*interpWorker, window []*Frame, 
 	}
 	nw := min(len(workers), len(batches))
 	batchCh := make(chan []tilePos)
+	mergeCh := make(chan interpMergeJob, 1)
 	var wg sync.WaitGroup
-	var mergeMu sync.Mutex
+	var mergeWg sync.WaitGroup
 	var errMu sync.Mutex
 	var firstErr error
 	setErr := func(err error) {
@@ -398,6 +409,20 @@ func processInterpInterval(r *Runner, workers []*interpWorker, window []*Frame, 
 		errMu.Unlock()
 	}
 	stride := r.cfg.Model.OutFrames * 3
+	mergeWg.Go(func() {
+		for job := range mergeCh {
+			start := time.Now()
+			var mg sync.WaitGroup
+			for ui := range canvases {
+				mg.Go(func() {
+					mergeSubframe(canvases[ui], job.view, job.tiles, unique[ui], stride, plan)
+				})
+			}
+			mg.Wait()
+			r.addMerge(time.Since(start).Nanoseconds())
+			job.out.Destroy()
+		}
+	})
 	for i := range nw {
 		w := workers[i]
 		wg.Go(func() {
@@ -413,16 +438,7 @@ func processInterpInterval(r *Runner, workers []*interpWorker, window []*Frame, 
 					setErr(err)
 					continue
 				}
-				mergeMu.Lock()
-				var mg sync.WaitGroup
-				for ui := range canvases {
-					mg.Go(func() {
-						mergeSubframe(canvases[ui], view, b, unique[ui], stride, plan)
-					})
-				}
-				mg.Wait()
-				mergeMu.Unlock()
-				out.Destroy()
+				mergeCh <- interpMergeJob{out: out, view: view, tiles: b}
 			}
 		})
 	}
@@ -431,5 +447,7 @@ func processInterpInterval(r *Runner, workers []*interpWorker, window []*Frame, 
 	}
 	close(batchCh)
 	wg.Wait()
+	close(mergeCh)
+	mergeWg.Wait()
 	return canvases, firstErr
 }

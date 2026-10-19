@@ -249,7 +249,7 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 
 每个任务仍是独立子进程，因此一个进程只会加载一个 ORT 运行时。Provider 通过 `--provider` 和 `--device` 选择，子进程启动时把对应目录加入 PATH。DirectML 会预先加载同目录的 `DirectML.dll`；OpenVINO 会把 `libs/` 加入 PATH。
 
-DirectML 的 `device_id` 对应 `IDXGIFactory::EnumAdapters` 的顺序，`gopaz devices` 用 DXGI 枚举显示实际适配器名称。TensorRT 的 engine 构建时机取决于输入 shape：固定块模型在会话创建时构建，Aion 的动态 shape 在第一次预热时构建；日志分别打印 `TensorRT session ready` 和 `Warming up TensorRT engine`。engine 缓存在 `%LOCALAPPDATA%\Gopaz\tensorrt`，文件名前缀包含模型文件名和 tile 尺寸，避免 Apollo 等固定块模型的不同 tile 变体共享同一 graph hash。同一前缀和 shape 再次运行直接复用，换分辨率或 `--gpu-vram` 会触发重建。OpenVINO 在会话创建时编译模型，NPU 首次编译可能需要数分钟，缓存位于 `%LOCALAPPDATA%\Gopaz\openvino`。
+DirectML 的 `device_id` 对应 `IDXGIFactory::EnumAdapters` 的顺序，`gopaz devices` 用 DXGI 枚举显示实际适配器名称。TensorRT 的 engine 构建时机取决于输入 shape：固定块模型在会话创建时构建，Aion 的动态 shape 在第一次预热时构建；日志分别打印 `TensorRT session ready` 和 `Warming up TensorRT engine`。engine 缓存在 `%LOCALAPPDATA%\Gopaz\tensorrt`，文件名前缀包含模型文件名和 tile 尺寸，避免 Apollo 等固定块模型的不同 tile 变体共享同一 graph hash。同一前缀和 shape 再次运行直接复用，换分辨率或 `--gpu-vram` 会触发重建。OpenVINO 在会话创建时编译模型，NPU 首次编译可能需要数分钟，缓存位于 `%LOCALAPPDATA%\Gopaz\openvino`。OpenVINO 下 Aion 通过 `AddFreeDimensionOverrideByName` 把 `bsize`、`fheight`、`fwidth` 和 `in8x` 的尺寸固定成当前 tile，启用静态 shape 优化；DirectML 保持动态 shape，因为实测静态 shape 在 Intel 核显上更慢。
 - 默认 1 个主会话 + 1 个底部会话，多 worker 共享；插帧时每个主会话按索引配对底部会话。
 - 共享会话的目标是复用模型权重和 CUDA arena，避免多会话把显存翻倍。
 
@@ -589,7 +589,21 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 
 CUDA 增强路径默认 2 个 worker 共享一个会话；权重和归一化图在任务开始时预计算。
 
-### 10.3 瓶颈分析
+### 10.3 Aion 后端对比
+
+在 RTX 5090 Laptop 和 Intel Arc 140T 上，Aion 2x 4 源帧、软件 H.264 编码的实测结果：
+
+| 后端 | 1080p 墙钟 | 4K 墙钟 | 备注 |
+|---|---:|---:|---|
+| CUDA | 6.9s | 13.0s | 1080p 2 worker |
+| TensorRT 热缓存 | 6.7s | 12.7s | 首次构建另行计算 |
+| DirectML Intel | 15.6s | 51.3s | 单 worker |
+| OpenVINO GPU 静态 shape | 11.2s | 32.6s | 单 worker，首次编译 39.3s |
+| OpenVINO GPU 动态 shape | 22.2s | 80.4s | 优化前 |
+
+Aion 的 bottom 模型约占总推理时间的一半，固定输入尺寸后 OpenVINO 的 bottom 和 main 都降到原来的三分之一左右。1080p 静态 shape 的输出与动态 shape 的 PSNR 约 49.8dB，4K 约 50.6dB。
+
+### 10.4 瓶颈分析
 
 - 优化前的主要瓶颈是“每个输出子帧都重跑一次完整 tile 推理”，8x 时约 7 次冗余推理；单区间一次推理解决了该问题。
 - 第二个瓶颈是 CPU 侧逐 tile 提取、融合和类型转换；并行行处理、预计算权重、直接读取张量视图和 fp16 融合降低了这部分开销。
@@ -624,6 +638,7 @@ CUDA 增强路径默认 2 个 worker 共享一个会话；权重和归一化图�
 - 参数估计：`tvai_pe` 自动参数估计尚未集成。
 - CUDA 兼容：部分 Blackwell GPU 的 fp16 ReduceMean 溢出已通过图补丁解决；异常时可用 `--gpu -1`。
 - 后端并发：TensorRT 和 DirectML 强制单会话单 worker；DirectML 不允许同一 Session 并发 Run，TensorRT 多会话实测没有收益。OpenVINO 支持同一 Session 并发，GPU 增强模型默认 4 worker，Aion/NPU/CPU 默认 1。
+- Aion 输入尺寸：OpenVINO 用 `AddFreeDimensionOverrideByName` 固定当前 tile 尺寸，首次每个尺寸需要重新编译；DirectML 保持动态尺寸，静态尺寸在 Intel 核显上实测更慢。
 - 后端启动：TensorRT 每个新 tile shape 首次构建 engine，Aion 4K 约 1-2 分钟；固定块模型在会话创建时构建，动态模型在预热时构建；OpenVINO NPU 首次编译每个模型/shape 可能数分钟。日志会分别提示构建和就绪耗时。
 - TensorRT 缓存：engine 按模型文件名和 tile 尺寸加 cache prefix。Apollo 的不同 tile 模型 graph hash 相同，缺少 prefix 时会错误复用其他尺寸的 engine 并报 `setInputShape` 失败。
 - DirectML 设备：`device_id` 是 DXGI 枚举顺序，0 不保证是核显；用 `gopaz devices` 查看名称。
