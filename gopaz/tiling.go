@@ -180,3 +180,17 @@ func clampFloat(v, lo, hi float64) float64 {
 	}
 	return v
 }
+
+// npuMaxTileArea is the largest tile area the VPUX compiler accepts, 576x672.
+const npuMaxTileArea = 576 * 672
+
+// npuTiles drops tiles too large for the OpenVINO NPU compiler.
+func npuTiles(tiles [][2]int) [][2]int {
+	out := make([][2]int, 0, len(tiles))
+	for _, t := range tiles {
+		if t[0]*t[1] <= npuMaxTileArea {
+			out = append(out, t)
+		}
+	}
+	return out
+}

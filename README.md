@@ -15,7 +15,8 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 | `gopaz prepare` | 把 `.tz` 解压成明文 `.onnx` |
 | `gopaz models` | 列出可用模型 |
 | `gopaz encoders` | 列出可用编码器 |
-| `gopaz devices` | 列出 DirectML 和 OpenVINO 设备 |
+| `gopaz devices` | 列出 CUDA、DirectML 和 OpenVINO 设备 |
+| `gopaz help` / `gopaz -v` | 帮助（`-h`、`--help`）/ 版本（`--version`、`-V`） |
 
 | 模型 | 类型 | 倍率 | 参数 |
 |---|---|---|---|
@@ -46,7 +47,7 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 | `ort-dll/dml/` | DirectML 运行时 |
 | `ort-dll/openvino/` | OpenVINO 运行时 |
 | `runtime/` | 可选，CUDA 和 cuDNN 运行库 |
-| `cache/` | 可选，把 `GOPAZ_CACHE_DIR` 指向该目录后缓存保存在此处 |
+| `cache/` | 自动创建，TensorRT engine 和 OpenVINO 编译缓存；删除整个文件夹即可清缓存，下次运行重新构建；用 `GOPAZ_CACHE_DIR` 可改到其他位置 |
 
 查找顺序：
 
@@ -96,8 +97,8 @@ gopaz interpolate -i input.mp4 -o output.mp4 --model aion --factor 8 --sensitivi
 | 选项 | 说明 |
 |---|---|
 | `--provider cuda / tensorrt / dml / openvino / cpu` | 推理后端 |
-| `--device <id>` | DirectML 适配器索引，或 OpenVINO `GPU.0`/`GPU.1`/`NPU`/`CPU` |
-| `--gpu <id>` | CUDA/TensorRT 设备号，-2 自动，-1 CPU |
+| `--device <id>` | CUDA/TensorRT/DML 设备索引，或 OpenVINO `GPU.0`/`GPU.1`/`NPU`/`CPU` |
+| `--gpu <id>` | -2 自动，-1 CPU；`--device` 省略时作为设备号兜底 |
 | `--threads <n>` | 推理线程数 |
 | `--workers <n>` | 并行 worker 数，0 自动 |
 | `--instances <n>` | 插值并发会话数，0 自动 |
@@ -114,7 +115,7 @@ gopaz interpolate -i input.mp4 -o output.mp4 --model aion --factor 8 --sensitivi
 | `cuda` | NVIDIA GPU | 默认后端，使用 CUDA 运行时 |
 | `tensorrt` | NVIDIA GPU | 首次为每个模型和输入尺寸构建 engine，之后复用缓存 |
 | `dml` | Direct3D 12 适配器 | 使用 DirectML 运行时，设备索引见 `gopaz devices` |
-| `openvino` | Intel GPU / NPU / CPU | GPU 和 NPU 默认 FP16，CPU 使用 FP32；Aion 不支持 NPU |
+| `openvino` | Intel GPU / NPU / CPU | GPU 和 NPU 默认 FP16，CPU 使用 FP32；NPU 自动限制 tile ≤576x672，编译失败立即报错；Aion 不支持 NPU |
 
 默认后端是 CUDA；非 NVIDIA 环境请显式选择 `--provider dml` 或 `--provider openvino`。
 
@@ -128,6 +129,8 @@ gopaz interpolate -i input.mp4 -o output.mp4 --model aion --factor 8 --sensitivi
 --audio-codec copy              # copy/aac/ac3/pcm/vorbis/none
 --audio-bitrate 320             # 音频码率 kbps
 ```
+
+自动命名：`<输入名>_<模型缩写><版本>`（如 `_prob4`、`_ghq5`、`_apo8`、`_aion1`），连续处理时累加标签（如 `_ghq5_apo8`），重名时在名字后追加 `(N)`。
 
 编码器与推理后端相互独立。默认 `auto` 会探测 NVENC：可用时用 H.265 NVENC，否则回退到软件 H.264。NVENC 编码器需要 NVIDIA GPU；其他环境也可以用 `--encoder` 手动选择 `h264-main-sw`、`vp9-best` 或 FFV1。
 

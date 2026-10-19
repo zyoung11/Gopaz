@@ -11,7 +11,36 @@ import (
 	"strings"
 )
 
+// version is the CLI version.
+const version = "v0.1.0"
+
+// globalFlagAction classifies global help and version flags anywhere in the CLI args.
+func globalFlagAction(args []string) string {
+	for _, a := range args {
+		switch a {
+		case "-h", "--help":
+			return "help"
+		case "-v", "--version", "-V":
+			return "version"
+		}
+	}
+	return ""
+}
+
+// printVersion prints the CLI version.
+func printVersion() {
+	fmt.Println(wrap(cBlue, "gopaz") + " " + version)
+}
+
 func main() {
+	switch globalFlagAction(os.Args[1:]) {
+	case "help":
+		usage()
+		return
+	case "version":
+		printVersion()
+		return
+	}
 	if len(os.Args) < 2 {
 		if err := cmdServe(nil); err != nil {
 			Error(err.Error())
@@ -35,7 +64,7 @@ func main() {
 		cmdEncoders()
 	case "devices":
 		cmdDevices()
-	case "help", "-h", "--help":
+	case "help":
 		usage()
 	default:
 		Errorf("unknown subcommand %q", os.Args[1])
@@ -76,7 +105,7 @@ func helpModel(label, desc string) {
 }
 
 func usage() {
-	fmt.Println(wrap(cBlue, "gopaz") + " - local Topaz Video AI CLI")
+	fmt.Println(wrap(cBlue, "gopaz") + " " + version + " - local Topaz Video AI CLI")
 	fmt.Println()
 	helpHeader("Usage:")
 	helpCommand("gopaz", "Start the local web UI")
@@ -86,8 +115,9 @@ func usage() {
 	helpCommand("gopaz prepare", "Convert .tz models to plain .onnx")
 	helpCommand("gopaz models", "List available models")
 	helpCommand("gopaz encoders", "List available encoders")
-	helpCommand("gopaz devices", "List DirectML and OpenVINO devices")
-	helpCommand("gopaz help", "Show this help")
+	helpCommand("gopaz devices", "List CUDA, DirectML, and OpenVINO devices")
+	helpCommand("gopaz help", "Show this help; also -h, --help")
+	helpCommand("gopaz -v", "Show version; also --version, -V")
 	fmt.Println()
 	helpHeader("Models:")
 	helpModel("enhancement", "proteus, gaia, gaia-cg")
@@ -107,9 +137,9 @@ func usage() {
 	helpOption("--rdt <v>", "Raw rdt override -0.01 to 0.2; -1 uses sensitivity")
 	fmt.Println()
 	helpHeader("Common options:")
-	helpOption("--gpu <id>", "-2 auto, -1 CPU, 0+ device index (default -2)")
+	helpOption("--gpu <id>", "-2 auto, -1 CPU, 0+ device index fallback when --device is omitted (default -2)")
 	helpOption("--provider <name>", "cuda, tensorrt, dml, openvino (default cuda)")
-	helpOption("--device <id>", "DML adapter index from gopaz devices, or OpenVINO GPU.0/NPU/CPU")
+	helpOption("--device <id>", "CUDA/TensorRT/DML device index from gopaz devices, or OpenVINO GPU.0/NPU/CPU")
 	helpOption("--threads <n>", "Inference thread count")
 	helpOption("--overlap <px>", "Block overlap, 0 = auto (enhancement/interp 48, Aion 32)")
 	helpOption("--kcolor <0|1>", "keepColor correction (default 1)")
@@ -301,15 +331,25 @@ func cmdEncoders() {
 }
 
 func cmdDevices() {
-	fmt.Println("DML / DirectML devices (DXGI order):")
-	devices := dmlDevices()
+	printDeviceSection("CUDA / TensorRT devices (index -> name):", cudaDevices(), "NVIDIA driver (nvcuda.dll) not found")
+	printDeviceSection("DML / DirectML devices (DXGI order):", dmlDevices(), "no DXGI hardware adapters found")
+	printDeviceSection("OpenVINO devices (id -> name):", openVINODevices(), "OpenVINO runtime (ort-dll/openvino) not found")
+}
+
+// printDeviceSection prints one provider section of gopaz devices.
+func printDeviceSection(title string, devices []deviceInfo, empty string) {
+	fmt.Println(title)
 	if len(devices) == 0 {
-		fmt.Println("  (no DXGI hardware adapters found)")
+		fmt.Printf("  (%s)\n", empty)
+		return
 	}
 	for _, d := range devices {
-		fmt.Printf("  %-4s %s\n", d.ID, d.Display)
+		if d.Display == d.ID {
+			fmt.Printf("  %s\n", d.ID)
+			continue
+		}
+		fmt.Printf("  %-6s %s\n", d.ID, d.Display)
 	}
-	fmt.Println("OpenVINO devices: GPU.0, GPU.1, NPU, CPU")
 }
 
 func containsInt(s []int, v int) bool {

@@ -117,13 +117,52 @@ func wstr(s string) *uint16 {
 	return &u[0]
 }
 
+// cpuFallbackMarker is the ORT OpenVINO EP warning emitted on silent CPU fallback.
+const cpuFallbackMarker = "Falling back to OV CPU"
+
+var (
+	ortLogOnce   sync.Once
+	ortLogThunk  uintptr
+	cpuFallbackMu sync.Mutex
+	cpuFallback  string
+)
+
+// ortLog receives ORT log records and records silent OpenVINO CPU fallbacks.
+func ortLog(param, severity, category, logid, codeLocation, message uintptr) uintptr {
+	if message == 0 {
+		return 0
+	}
+	msg := byteStr(message)
+	Debugf("ort: %s", msg)
+	if strings.Contains(msg, cpuFallbackMarker) {
+		cpuFallbackMu.Lock()
+		cpuFallback = msg
+		cpuFallbackMu.Unlock()
+	}
+	return 0
+}
+
+// cpuFallbackMessage returns the recorded OpenVINO CPU fallback warning.
+func cpuFallbackMessage() string {
+	cpuFallbackMu.Lock()
+	defer cpuFallbackMu.Unlock()
+	return cpuFallback
+}
+
 // Env represents an ORT environment holding logging and global state.
 type Env struct{ ptr uintptr }
 
-// NewEnv creates an environment.
+// NewEnv creates an environment with a custom logger for fallback detection.
 func NewEnv() (*Env, error) {
+	ortLogOnce.Do(func() {
+		ortLogThunk = syscall.NewCallback(ortLog)
+	})
+	cpuFallbackMu.Lock()
+	cpuFallback = ""
+	cpuFallbackMu.Unlock()
 	var p uintptr
-	if err := check(call(ortIdxCreateEnv, 3, uintptr(unsafe.Pointer(cstr("gopaz"))), uintptr(unsafe.Pointer(&p))), "CreateEnv"); err != nil {
+	st := call(ortIdxCreateEnvWithCustomLogger, ortLogThunk, 0, 2, uintptr(unsafe.Pointer(cstr("gopaz"))), uintptr(unsafe.Pointer(&p)))
+	if err := check(st, "CreateEnv"); err != nil {
 		return nil, err
 	}
 	return &Env{ptr: p}, nil
@@ -222,7 +261,7 @@ func tensorRTProviderOptions(opt SessionOptions) map[string]string {
 		"device_id":                      strconv.Itoa(opt.CUDADeviceID),
 		"trt_fp16_enable":                "1",
 		"trt_builder_optimization_level": "1",
-		"trt_max_workspace_size":         "2147483648",
+		"trt_max_workspace_size":         "8589934592",
 	}
 	if opt.TRTCacheDir != "" {
 		vals["trt_engine_cache_enable"] = "1"

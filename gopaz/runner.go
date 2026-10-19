@@ -128,11 +128,18 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		if err != nil {
 			return nil, err
 		}
-		if strings.EqualFold(device, "NPU") && m.Key == "aion" {
+		if strings.EqualFold(device, "NPU") && m.NPUUnsupported {
 			return nil, fmt.Errorf("Aion is not supported on the OpenVINO NPU; use GPU.0 instead")
 		}
 	}
 	cfg.Device = device
+	gpuID := cfg.GPU
+	if device != "" && (providerNeedsCUDA(provider) || provider == ProviderDML) {
+		gpuID, err = deviceIndex(device)
+		if err != nil {
+			return nil, err
+		}
+	}
 	nInst := cfg.Instances
 	if nInst <= 0 {
 		nInst = 1
@@ -153,8 +160,8 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		nWorkers = providerDefaultWorkers(provider, m.Kind, device)
 		if nWorkers <= 0 {
 			nWorkers = 2
-			if cfg.GPU != -1 {
-				if free := detectFreeVRAMGB(cfg.GPU); free > 0 && free < 12 {
+			if gpuID != -1 {
+				if free := detectFreeVRAMGB(gpuID); free > 0 && free < 12 {
 					nWorkers = 1
 				}
 			}
@@ -175,6 +182,16 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if m.SingleFile != "" {
 		tw, th = chooseAionTile(cfg.FW, cfg.FH, overlap, cfg.DeviceVRAMGB)
 	} else {
+		if provider == ProviderOpenVINO && strings.EqualFold(device, "NPU") {
+			capped := npuTiles(candidates)
+			if len(capped) == 0 {
+				return nil, fmt.Errorf("model %s has no tile size supported by the OpenVINO NPU", m.Key)
+			}
+			if len(capped) < len(candidates) {
+				Infof("NPU limits tile size to 576x672 for the VPUX compiler")
+				candidates = capped
+			}
+		}
 		tw, th = chooseTile(candidates, cfg.FW, cfg.FH, overlap, TilePenalty)
 	}
 	modelPath, err := m.TZPath(cfg.ModelDir, tw, th, cfg.Scale)
@@ -240,14 +257,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		}
 	}
 	if provider == ProviderDML {
-		id, err := dmlDeviceID(device)
-		if err != nil {
-			return nil, err
-		}
-		if device == "" && cfg.GPU >= 0 {
-			id = cfg.GPU
-		}
-		so.DMLDeviceID = id
+		so.DMLDeviceID = max(gpuID, 0)
 	}
 	if providerNeedsCUDA(provider) {
 		if cfg.VramGB > 0 {
@@ -264,8 +274,8 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 			autoGB := clampFloat(float64(tw*th*cfg.Scale*cfg.Scale)/600000, 4.0, 12.0)
 			so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
 		}
-		if cfg.GPU >= 0 {
-			so.CUDADeviceID = cfg.GPU
+		if gpuID >= 0 {
+			so.CUDADeviceID = gpuID
 		}
 	}
 	if cfg.Threads > 0 {
@@ -333,6 +343,15 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		bpool = br.pool
 	}
 	if provider == ProviderOpenVINO {
+		if msg := cpuFallbackMessage(); msg != "" {
+			for _, s := range pool {
+				s.Destroy()
+			}
+			for _, s := range bpool {
+				s.Destroy()
+			}
+			return nil, fmt.Errorf("OpenVINO failed to compile for %s and fell back to CPU; stopped instead of running on CPU, use another device or provider (%s)", device, msg)
+		}
 		Infof("OpenVINO model ready in %.1fs", time.Since(sessionStart).Seconds())
 	}
 	if provider == ProviderTensorRT {
@@ -676,11 +695,18 @@ func tensorToFrameTyped(t *Tensor, w, h int, elemType int) (*Frame, error) {
 	return f, nil
 }
 
-// cacheRoot returns the provider cache directory. GOPAZ_CACHE_DIR overrides
-// the default per-user cache directory.
+// cacheRoot returns the provider cache directory next to the executable.
+// GOPAZ_CACHE_DIR overrides the location; unwritable executable directories
+// fall back to the per-user cache directory.
 func cacheRoot() string {
 	if dir := strings.TrimSpace(os.Getenv("GOPAZ_CACHE_DIR")); dir != "" {
 		return dir
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Join(filepath.Dir(exe), "cache")
+		if err := os.MkdirAll(dir, 0o755); err == nil {
+			return dir
+		}
 	}
 	dir, err := os.UserCacheDir()
 	if err != nil {

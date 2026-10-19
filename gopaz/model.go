@@ -50,6 +50,8 @@ type Model struct {
 	Params []Param
 	// KeepColor reports whether the model requires keepColor correction.
 	KeepColor bool
+	// NPUUnsupported marks models that crash on the OpenVINO NPU.
+	NPUUnsupported bool
 	// BlockOverlap is the blockOverlap from model JSON; 0 means use the default 48.
 	BlockOverlap int
 	// FilePrefix is the file name prefix used to build <prefix>-fp16-<H>x<W>[-<S>x]-ox.tz.
@@ -125,6 +127,7 @@ func ModelRegistry() map[string]*Model {
 			Display: "Aion", Scales: nil,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
 			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz", BlockOverlap: 32,
+			NPUUnsupported: true,
 		},
 	}
 }

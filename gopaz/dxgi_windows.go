@@ -59,11 +59,16 @@ func dmlDevices() []deviceInfo {
 		hr, _, _ = comCall(adapter, dxgiGetDesc, uintptr(unsafe.Pointer(&desc)))
 		if int32(hr) >= 0 {
 			name := syscall.UTF16ToString(desc.Description[:])
+			Debugf("dml adapter %d: name=%q dedicated=%d system=%d shared=%d vendor=0x%04x", i, name, uint64(desc.DedicatedVideoMemory), uint64(desc.DedicatedSystemMemory), uint64(desc.SharedSystemMemory), desc.VendorID)
+			if desc.VendorID == 0x1414 {
+				comRelease(adapter)
+				continue
+			}
 			if name == "" {
 				name = fmt.Sprintf("GPU %d", i)
 			}
-			if desc.VendorID == 0x1414 {
-				name += " (software)"
+			if desc.DedicatedVideoMemory >= 1<<30 {
+				name += " (" + formatVRAM(uint64(desc.DedicatedVideoMemory)) + ")"
 			}
 			out = append(out, deviceInfo{ID: strconv.Itoa(i), Display: name})
 		}

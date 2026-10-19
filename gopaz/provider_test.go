@@ -38,16 +38,22 @@ func TestNormalizeProvider(t *testing.T) {
 	}
 }
 
-// TestProviderDevices checks DirectML and OpenVINO device parsing.
+// TestProviderDevices checks numeric and OpenVINO device parsing.
 func TestProviderDevices(t *testing.T) {
-	if id, err := dmlDeviceID(""); err != nil || id != 0 {
-		t.Fatalf("empty DML device = %d, %v", id, err)
+	if id, err := deviceIndex(""); err != nil || id != 0 {
+		t.Fatalf("empty device = %d, %v", id, err)
 	}
-	if id, err := dmlDeviceID("1"); err != nil || id != 1 {
-		t.Fatalf("DML device = %d, %v", id, err)
+	if id, err := deviceIndex("1"); err != nil || id != 1 {
+		t.Fatalf("device = %d, %v", id, err)
 	}
-	if _, err := dmlDeviceID("-1"); err == nil {
-		t.Fatal("negative DML device should fail")
+	if id, err := deviceIndex(" 3 "); err != nil || id != 3 {
+		t.Fatalf("padded device = %d, %v", id, err)
+	}
+	if _, err := deviceIndex("-1"); err == nil {
+		t.Fatal("negative device should fail")
+	}
+	if _, err := deviceIndex("GPU.0"); err == nil {
+		t.Fatal("non-numeric device should fail")
 	}
 	if dev, err := openVINODevice(""); err != nil || dev != "GPU.0" {
 		t.Fatalf("default OpenVINO device = %q, %v", dev, err)

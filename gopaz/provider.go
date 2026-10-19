@@ -69,15 +69,15 @@ func providerDefaultWorkers(p Provider, kind Kind, device string) int {
 	return 4
 }
 
-// dmlDeviceID parses a DirectML adapter index.
-func dmlDeviceID(value string) (int, error) {
+// deviceIndex parses a non-negative numeric device index; empty means 0.
+func deviceIndex(value string) (int, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return 0, nil
 	}
 	id, err := strconv.Atoi(value)
 	if err != nil || id < 0 {
-		return 0, fmt.Errorf("invalid DirectML device %q", value)
+		return 0, fmt.Errorf("invalid device index %q", value)
 	}
 	return id, nil
 }

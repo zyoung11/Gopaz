@@ -243,7 +243,11 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 
 DirectML 的 `device_id` 对应 `IDXGIFactory::EnumAdapters` 的顺序，`gopaz devices` 用 DXGI 枚举显示实际适配器名称。TensorRT 在固定块模型上于会话创建时构建 engine，Aion 的动态 shape 在预热时构建；日志会打印 `TensorRT session ready` 或 `Warming up TensorRT engine`。engine 缓存的文件名前缀包含模型文件名和 tile 尺寸，避免不同 tile 变体共享同一 graph hash。同一前缀和 shape 再次运行直接复用，换分辨率或 `--gpu-vram` 会触发重建。OpenVINO 在会话创建时编译模型，NPU 首次编译可能较慢。OpenVINO 下 Aion 通过 `AddFreeDimensionOverrideByName` 把 `bsize`、`fheight`、`fwidth` 和 `in8x` 的尺寸固定成当前 tile，启用静态 shape 优化；DirectML 保持动态 shape。
 
-缓存目录默认使用系统用户缓存目录，可用 `GOPAZ_CACHE_DIR` 指向便携目录或其他位置。
+缓存目录默认为可执行文件旁的 `cache/`（首次使用 TensorRT 或 OpenVINO 时自动创建），删除该文件夹即可清空缓存；可用 `GOPAZ_CACHE_DIR` 指向其他位置，可执行目录不可写时回退到系统用户缓存目录。
+
+设备名称探测：`gopaz devices` 和 Web 界面显示真实设备名称，`--device` 参数仍使用稳定 ID，名称只做显示。CUDA/TensorRT 通过 `nvcuda.dll` 的驱动 API（`cuDeviceGetCount`、`cuDeviceGetName`、`cuDeviceTotalMem_v2`）枚举，附带显存；DirectML 用 DXGI 适配器名，专用显存低于 1GB 的 carve-out 不显示，VendorID `0x1414` 的软件适配器（WARP，即 Microsoft Basic Render Driver）直接过滤，原始枚举保留在 `GOPAZ_DEBUG=1` 日志里，设备 ID 仍是原始 DXGI 索引。OpenVINO 先把 `libs/` 加入 PATH 再加载 `openvino_c.dll`（否则传递依赖 `tbb12.dll` 无法解析），用 `ov_core_get_available_devices` 枚举真实存在的设备，再用 `FULL_DEVICE_NAME` 查出设备全名；GPU 插件会把 NVIDIA/AMD 等非 Intel GPU 也列成 OpenCL 设备（如 `GPU.1`），这些不受官方支持，用 `DEVICE_ARCHITECTURE` 的 `vendor=0x8086` 过滤掉；CPU 直接标注为 `CPU`。Web 设置面板的 GPU 下拉按 CUDA 顺序回退 DXGI 顺序显示名称；探测不到任何运行时就退回固定 `Device N` 标签。
+
+设备选择：四个后端在 Web 的 Compute 面板都提供设备下拉，`--device` 优先于 `--gpu`；CUDA/TensorRT/DML 使用数字索引（`gopaz devices` 的 ID 列），OpenVINO 使用 `GPU.0`/`NPU`/`CPU`。`--gpu` 仅在 `--device` 省略时作为设备号兜底，`-1` 强制 CPU；空闲显存探测和 worker 自动值跟随最终选定的设备。
 
 ## 5. ONNX 图修补
 
@@ -491,6 +495,10 @@ Aion 的 `in8x` 是 8 帧预测，形状 `[1,H/4,W/4,24]`，在图中经 `unshuf
 
 带 rotation 元数据的视频在 `ProbeVideo` 阶段把宽高转换为显示方向，ffmpeg 解码时自动旋转，后续分块和输出尺寸都基于这一方向。
 
+### 8.5 输出命名
+
+自动命名对齐 Topaz 约定：输出文件名为 `<输入名>_<模型缩写><版本>`，例如 `_prob4`（Proteus）、`_ghq5`（Gaia）、`_gcg5`（Gaia-CG）、`_apo8`（Apollo）、`_aion1`（Aion），不记录倍率或倍数。连续处理时输入名自然携带已有标签，新标签继续追加，例如 `10月20日 (1)_ghq5_apo8.mp4`。输出重名时在名字后追加 `(N)` 再接标签，例如 `11月18日 (3)(1)_apo8.mp4`；自定义输出名同样用 `(N)` 去重。
+
 ## 9. 验证与质量
 
 ### 9.1 PSNR 条件
@@ -557,10 +565,11 @@ Apollo 16x（320×240、30 帧）：双方都是 465 帧 / 15.5s，平均 PSNR 3
 - Aion 输入尺寸：OpenVINO 用 `AddFreeDimensionOverrideByName` 固定当前 tile 尺寸，首次每个尺寸需要重新编译；DirectML 保持动态尺寸。
 - 后端启动：TensorRT 每个新 tile shape 首次构建 engine；固定块模型在会话创建时构建，动态模型在预热时构建；OpenVINO NPU 首次编译可能较慢。日志会分别提示构建和就绪耗时。
 - TensorRT 缓存：engine 按模型文件名和 tile 尺寸加 cache prefix。Apollo 的不同 tile 模型 graph hash 相同，缺少 prefix 时会错误复用其他尺寸的 engine 并报 `setInputShape` 失败。
-- TensorRT 构建：默认 builder level 1，冷启动较快；level 3/5 不提升 Aion 推理速度，level 0 会明显变慢。
+- TensorRT 构建：默认 builder level 1，冷启动较快；level 3/5 不提升 Aion 推理速度，level 0 会明显变慢。workspace 上限为 8GiB；2GiB 时 Aion 的候选 tactic 因内存不足被全部跳过，报 `Could not find any implementation` 导致 engine 构建失败。
 - DirectML 设备：`device_id` 是 DXGI 枚举顺序，索引不保证对应独显或核显；用 `gopaz devices` 查看名称。
 - DirectML NPU：DirectML 基于 D3D12，当前 Intel NPU 不作为 D3D12 适配器暴露，NPU 只能走 OpenVINO。
-- OpenVINO NPU：Proteus/Gaia/Apollo 可用，Aion 在部分 NPU 上不受支持；换 `GPU.0` 可运行。
+- OpenVINO NPU：VPUX 编译器只接受 576x672 以内的 tile，更大 tile 无法编译（`tiling schema [1,1,1,1]`）；任务会自动缩小 tile 并提示 `NPU limits tile size`。Proteus/Gaia/Apollo 实测在 NPU 上真跑，首次编译可能很久（Proteus 4x 实测约 30 分钟，之后复用 blob 缓存）。Aion 在 NPU 上直接崩溃，模型标记 `NPUUnsupported`，Web 不显示 NPU，CLI 直接报错提示换 `GPU.0`。
+- 静默回退防护：ORT OpenVINO EP 在编译失败时会静默改用 OV CPU 只留一条 WARNING。gopaz 用 `CreateEnvWithCustomLogger` 接管 ORT 日志（severity WARNING），检测到 `Falling back to OV CPU` 立即停止任务并报错，不会默默用 CPU 算完。
 - 模型范围：只实现 Proteus、Gaia、Gaia-CG、Apollo、Aion。
 
 ## 13. TODO

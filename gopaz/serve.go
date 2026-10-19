@@ -35,11 +35,12 @@ var (
 )
 
 type modelInfo struct {
-	Key     string      `json:"key"`
-	Display string      `json:"display"`
-	Kind    string      `json:"kind"`
-	Scales  []int       `json:"scales"`
-	Params  []paramInfo `json:"params"`
+	Key            string      `json:"key"`
+	Display        string      `json:"display"`
+	Kind           string      `json:"kind"`
+	Scales         []int       `json:"scales"`
+	Params         []paramInfo `json:"params"`
+	NPUUnsupported bool        `json:"npuUnsupported"`
 }
 
 type paramInfo struct {
@@ -53,11 +54,6 @@ type encoderInfo struct {
 	Extensions  []string `json:"extensions"`
 	HasCQP      bool     `json:"hasCqp"`
 	RateControl bool     `json:"rateControl"`
-}
-
-type deviceInfo struct {
-	ID      string `json:"id"`
-	Display string `json:"display"`
 }
 
 type providerInfo struct {
@@ -78,6 +74,7 @@ type configResponse struct {
 	Models    []modelInfo    `json:"models"`
 	Encoders  []encoderInfo  `json:"encoders"`
 	Providers []providerInfo `json:"providers"`
+	GPUs      []deviceInfo   `json:"gpus"`
 	Defaults  defaultsInfo   `json:"defaults"`
 }
 
@@ -214,7 +211,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		if m.Kind == KindInterp {
 			kind = "interp"
 		}
-		item := modelInfo{Key: m.Key, Display: m.Display, Kind: kind, Scales: m.Scales}
+		item := modelInfo{Key: m.Key, Display: m.Display, Kind: kind, Scales: m.Scales, NPUUnsupported: m.NPUUnsupported}
 		for _, p := range m.Params {
 			item.Params = append(item.Params, paramInfo{Key: p.Key, GUIName: p.GUIName})
 		}
@@ -231,20 +228,17 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		Encoder: defaultEncoder(localTool("ffmpeg")), Quality: "High",
 		RateControl: "cq", AudioCodec: "copy", AudioBitrate: 320,
 	}
+	gpus := cudaDevices()
 	dml := dmlDevices()
-	if len(dml) == 0 {
-		dml = []deviceInfo{{ID: "0", Display: "GPU 0"}, {ID: "1", Display: "GPU 1"}}
+	out.GPUs = gpus
+	if len(out.GPUs) == 0 {
+		out.GPUs = dml
 	}
 	out.Providers = []providerInfo{
-		{ID: "cuda", Display: "CUDA"},
-		{ID: "tensorrt", Display: "TensorRT"},
+		{ID: "cuda", Display: "CUDA", Devices: gpus},
+		{ID: "tensorrt", Display: "TensorRT", Devices: gpus},
 		{ID: "dml", Display: "DirectML", Devices: dml},
-		{ID: "openvino", Display: "OpenVINO", Devices: []deviceInfo{
-			{ID: "GPU.0", Display: "GPU 0"},
-			{ID: "GPU.1", Display: "GPU 1"},
-			{ID: "NPU", Display: "NPU"},
-			{ID: "CPU", Display: "CPU"},
-		}},
+		{ID: "openvino", Display: "OpenVINO", Devices: openVINODevices()},
 	}
 	writeJSON(w, http.StatusOK, out)
 }

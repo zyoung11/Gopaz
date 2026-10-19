@@ -250,23 +250,20 @@ func resolveOutput(req *jobRequest) (*jobPlan, error) {
 		if invalidFilename(base) {
 			return nil, errors.New("output file name contains invalid characters")
 		}
-		p := filepath.Join(dir, base+"."+ext)
-		for i := 1; fileExists(p); i++ {
-			p = filepath.Join(dir, fmt.Sprintf("%s_%d.%s", base, i, ext))
-		}
-		return &jobPlan{Mode: mode, Model: m, Encoder: e, OutputPath: p}, nil
+		return &jobPlan{Mode: mode, Model: m, Encoder: e, OutputPath: dedupePath(dir, base, "", ext)}, nil
 	}
 
 	base := strings.TrimSuffix(filepath.Base(input), filepath.Ext(input))
-	prefix := "tvai"
-	if mode == "enhance" {
-		prefix = m.Short + m.Version
-	}
-	p := filepath.Join(dir, base+"_"+prefix+"."+ext)
+	return &jobPlan{Mode: mode, Model: m, Encoder: e, OutputPath: dedupePath(dir, base, "_"+m.Short+m.Version, ext)}, nil
+}
+
+// dedupePath appends (N) to base until the output path is free.
+func dedupePath(dir, base, suffix, ext string) string {
+	p := filepath.Join(dir, base+suffix+"."+ext)
 	for i := 1; fileExists(p); i++ {
-		p = filepath.Join(dir, fmt.Sprintf("%s_%d_%s.%s", base, i, prefix, ext))
+		p = filepath.Join(dir, fmt.Sprintf("%s(%d)%s.%s", base, i, suffix, ext))
 	}
-	return &jobPlan{Mode: mode, Model: m, Encoder: e, OutputPath: p}, nil
+	return p
 }
 
 func invalidFilename(name string) bool {

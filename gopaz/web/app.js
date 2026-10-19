@@ -505,6 +505,7 @@ async function loadConfig() {
   renderFilters();
   populateEncoders();
   populateProviders();
+  updateGpuOptions();
   selectModel(cfg.models.some((m) => m.key === "proteus") ? "proteus" : cfg.models[0].key);
   resetTaskLabels();
   setStatusKey("status.ready");
@@ -564,6 +565,7 @@ function selectModel(key, sync = true) {
   $("#instancesField").hidden = model.kind !== "interp";
 
   renderModelSettings();
+  updateDeviceOptions();
   renderCliHint();
   if (sync) syncOutputSoon();
   updateStartState();
@@ -759,7 +761,11 @@ function updateDeviceOptions() {
   const provider = providerById(state.provider);
   const field = $("#deviceField");
   const select = $("#deviceSelect");
-  const devices = (provider && provider.devices) || [];
+  const model = currentModel();
+  const noNPU = !!(model && model.npuUnsupported);
+  const devices = ((provider && provider.devices) || []).filter(
+    (d) => !(noNPU && d.id.toUpperCase() === "NPU"),
+  );
   field.hidden = devices.length === 0;
   select.innerHTML = "";
   if (devices.length === 0) {
@@ -776,6 +782,39 @@ function updateDeviceOptions() {
     state.device = devices[0].id;
   }
   select.value = state.device;
+}
+
+function updateGpuOptions() {
+  const select = $("#gpuSelect");
+  const current = select.value;
+  select.innerHTML = "";
+  const autoOpt = document.createElement("option");
+  autoOpt.value = "-2";
+  autoOpt.dataset.i18n = "settings.auto";
+  autoOpt.textContent = t("settings.auto");
+  select.append(autoOpt);
+  const cpuOpt = document.createElement("option");
+  cpuOpt.value = "-1";
+  cpuOpt.dataset.i18n = "settings.cpu";
+  cpuOpt.textContent = t("settings.cpu");
+  select.append(cpuOpt);
+  const gpus = (state.config && state.config.gpus) || [];
+  if (gpus.length === 0) {
+    for (let i = 0; i < 4; i++) {
+      const opt = document.createElement("option");
+      opt.value = String(i);
+      opt.textContent = `Device ${i}`;
+      select.append(opt);
+    }
+  } else {
+    for (const gpu of gpus) {
+      const opt = document.createElement("option");
+      opt.value = gpu.id;
+      opt.textContent = gpu.display;
+      select.append(opt);
+    }
+  }
+  if ([...select.options].some((o) => o.value === current)) select.value = current;
 }
 
 function selectProvider(id) {
@@ -1079,8 +1118,8 @@ async function submitJob(req, isPreview) {
   $("#cancelButton").hidden = false;
   $("#cancelButton").disabled = false;
   $("#revealButton").hidden = true;
-  $("#progressFill").style.width = "";
-  $("#progressTrack").classList.add("indeterminate");
+  $("#progressFill").style.width = "0%";
+  $("#progressTrack").classList.remove("indeterminate");
   $("#progressLabel").textContent = t("task.preparing");
   $("#progressValue").textContent = "…";
   $("#taskSpeed").textContent = `— ${t("task.fpsUnit")}`;

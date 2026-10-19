@@ -8,6 +8,7 @@ const (
 	ortIdxGetErrorMessage                                   = 2
 	ortIdxReleaseStatus                                     = 93
 	ortIdxCreateEnv                                         = 3
+	ortIdxCreateEnvWithCustomLogger                         = 4
 	ortIdxDisableTelemetryEvents                            = 6
 	ortIdxReleaseEnv                                        = 92
 	ortIdxCreateSession                                     = 7

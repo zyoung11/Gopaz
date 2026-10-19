@@ -1,6 +1,20 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
+
+// TestCPUFallbackMarker checks the ORT warning used for silent CPU fallback detection.
+func TestCPUFallbackMarker(t *testing.T) {
+	msg := "Model compilation failed at OV NPU. Falling back to OV CPU for execution"
+	if !strings.Contains(msg, cpuFallbackMarker) {
+		t.Fatalf("marker %q not found in %q", cpuFallbackMarker, msg)
+	}
+	if strings.Contains("Model compiled successfully", cpuFallbackMarker) {
+		t.Fatal("marker matched an unrelated message")
+	}
+}
 
 // TestApplyCUDNNAlgoFromEnv checks the cuDNN algorithm override values.
 func TestApplyCUDNNAlgoFromEnv(t *testing.T) {
@@ -74,7 +88,7 @@ func TestTensorRTProviderOptions(t *testing.T) {
 	if vals["trt_builder_optimization_level"] != "1" {
 		t.Fatalf("builder level = %q", vals["trt_builder_optimization_level"])
 	}
-	if vals["trt_max_workspace_size"] != "2147483648" {
+	if vals["trt_max_workspace_size"] != "8589934592" {
 		t.Fatalf("workspace = %q", vals["trt_max_workspace_size"])
 	}
 	if vals["trt_engine_cache_enable"] != "1" || vals["trt_engine_cache_prefix"] != "aion" {

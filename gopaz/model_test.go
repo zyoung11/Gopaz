@@ -30,6 +30,18 @@ func TestModelDefaults(t *testing.T) {
 	}
 }
 
+// TestModelNPUFlags checks the OpenVINO NPU capability flags.
+func TestModelNPUFlags(t *testing.T) {
+	if !ModelRegistry()["aion"].NPUUnsupported {
+		t.Fatal("aion should be NPUUnsupported")
+	}
+	for _, key := range []string{"proteus", "gaia", "gaia-cg", "apollo"} {
+		if ModelRegistry()[key].NPUUnsupported {
+			t.Fatalf("%s should run on the NPU", key)
+		}
+	}
+}
+
 // TestProteusParamRanges checks that every Proteus parameter allows negative values.
 func TestProteusParamRanges(t *testing.T) {
 	for _, p := range ModelRegistry()["proteus"].Params {

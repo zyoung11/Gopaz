@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -55,5 +56,22 @@ func TestCacheRootOverride(t *testing.T) {
 	t.Setenv("GOPAZ_CACHE_DIR", want)
 	if got := cacheRoot(); got != want {
 		t.Fatalf("cacheRoot = %q, want %q", got, want)
+	}
+}
+
+// TestCacheRootPortable checks that the cache lives next to the executable.
+func TestCacheRootPortable(t *testing.T) {
+	t.Setenv("GOPAZ_CACHE_DIR", "")
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(filepath.Dir(exe), "cache")
+	got := cacheRoot()
+	if got != want {
+		t.Fatalf("cacheRoot = %q, want %q", got, want)
+	}
+	if st, err := os.Stat(got); err != nil || !st.IsDir() {
+		t.Fatalf("cache directory not created: %v", err)
 	}
 }
