@@ -69,12 +69,35 @@ func TestProviderSingleThreaded(t *testing.T) {
 		{ProviderCUDA, false},
 		{ProviderTensorRT, true},
 		{ProviderDML, true},
-		{ProviderOpenVINO, true},
+		{ProviderOpenVINO, false},
 		{ProviderCPU, false},
 	}
 	for _, c := range cases {
 		if got := providerSingleThreaded(c.provider); got != c.want {
 			t.Fatalf("%s: got %v, want %v", c.provider, got, c.want)
+		}
+	}
+}
+
+// TestProviderDefaultWorkers checks the automatic OpenVINO worker count.
+func TestProviderDefaultWorkers(t *testing.T) {
+	cases := []struct {
+		provider Provider
+		kind     Kind
+		device   string
+		want     int
+	}{
+		{ProviderOpenVINO, KindEnhance, "GPU.0", 4},
+		{ProviderOpenVINO, KindEnhance, "NPU", 1},
+		{ProviderOpenVINO, KindEnhance, "CPU", 1},
+		{ProviderOpenVINO, KindInterp, "GPU.0", 1},
+		{ProviderCUDA, KindEnhance, "", 0},
+		{ProviderTensorRT, KindInterp, "", 0},
+		{ProviderDML, KindEnhance, "1", 0},
+	}
+	for _, c := range cases {
+		if got := providerDefaultWorkers(c.provider, c.kind, c.device); got != c.want {
+			t.Fatalf("%s %s: got %d, want %d", c.provider, c.device, got, c.want)
 		}
 	}
 }

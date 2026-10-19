@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"unicode/utf16"
@@ -247,18 +248,26 @@ func appendTensorRT(so uintptr, opt SessionOptions) error {
 	return check(call(ortIdxSessionOptionsAppendExecutionProvider_TensorRT_V2, so, provider), "AppendTensorRT")
 }
 
-// appendOpenVINO appends the OpenVINO execution provider.
-func appendOpenVINO(so uintptr, opt SessionOptions) error {
-	device := opt.Device
+// openVINOProviderOptions builds the OpenVINO execution provider options.
+func openVINOProviderOptions(device, cacheDir string) map[string]string {
 	if device == "" {
 		device = "GPU.0"
 	}
 	vals := map[string]string{
 		"device_type": device,
 	}
-	if opt.OVCacheDir != "" {
-		vals["cache_dir"] = opt.OVCacheDir
+	if !strings.EqualFold(device, "CPU") {
+		vals["precision"] = "FP16"
 	}
+	if cacheDir != "" {
+		vals["cache_dir"] = cacheDir
+	}
+	return vals
+}
+
+// appendOpenVINO appends the OpenVINO execution provider.
+func appendOpenVINO(so uintptr, opt SessionOptions) error {
+	vals := openVINOProviderOptions(opt.Device, opt.OVCacheDir)
 	keys, values, keyPtrs, valPtrs := keyValuePointers(vals)
 	st := call(ortIdxSessionOptionsAppendExecutionProvider_OpenVINO_V2, so,
 		uintptr(unsafe.Pointer(&keyPtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(len(vals)))

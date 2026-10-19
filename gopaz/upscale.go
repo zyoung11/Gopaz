@@ -94,7 +94,7 @@ func RunUpscale(job UpscaleJob) error {
 		}
 	}()
 	th, tw := r.TileSize()
-	Infof("Using tile %dx%d, model %s", tw, th, job.Model.Display)
+	Infof("Using tile %dx%d, model %s, workers %d", tw, th, job.Model.Display, r.workers)
 	if job.GPU != -1 {
 		switch r.cfg.Provider {
 		case ProviderCUDA:
@@ -109,7 +109,7 @@ func RunUpscale(job UpscaleJob) error {
 					return err
 				}
 				th, tw = r.TileSize()
-				Infof("CPU mode using tile %dx%d, model %s", tw, th, job.Model.Display)
+				Infof("CPU mode using tile %dx%d, model %s, workers %d", tw, th, job.Model.Display, r.workers)
 			}
 		case ProviderTensorRT:
 			if err := warmupEnhance(r); err != nil {

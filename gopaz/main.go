@@ -82,7 +82,7 @@ func usage() {
   --kcolor  keepColor 色彩校正 0/1 (默认 1)
   --scene-threshold 场景切换阈值 (默认 6.5)
   --instances 0 插值并发会话数 (0=自动，默认 1 个共享会话)
-  --workers 0   插值/增强并行 worker 数 (0=自动，默认 2)
+  --workers 0   插值/增强并行 worker 数 (0=自动，OpenVINO 增强默认 4，Aion/NPU 默认 1)
   --gpu-vram 0  Aion tile 预算 GB (0=约 2.4M 像素；越小越省显存)
   --vram    每会话显存上限 GB (0=按 tile 自动)
   --start --end  处理帧范围

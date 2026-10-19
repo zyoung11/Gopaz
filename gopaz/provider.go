@@ -55,7 +55,18 @@ func providerNeedsCUDA(p Provider) bool {
 
 // providerSingleThreaded reports whether a provider requires serial inference.
 func providerSingleThreaded(p Provider) bool {
-	return p == ProviderTensorRT || p == ProviderDML || p == ProviderOpenVINO
+	return p == ProviderTensorRT || p == ProviderDML
+}
+
+// providerDefaultWorkers returns the automatic worker count for a provider.
+func providerDefaultWorkers(p Provider, kind Kind, device string) int {
+	if p != ProviderOpenVINO {
+		return 0
+	}
+	if strings.EqualFold(device, "NPU") || strings.EqualFold(device, "CPU") || kind == KindInterp {
+		return 1
+	}
+	return 4
 }
 
 // dmlDeviceID parses a DirectML adapter index.

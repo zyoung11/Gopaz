@@ -143,16 +143,18 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		nInst = 3
 	}
 	nWorkers := cfg.Workers
-	if nWorkers <= 0 {
-		nWorkers = 2
-		if cfg.GPU != -1 {
-			if free := detectFreeVRAMGB(cfg.GPU); free > 0 && free < 12 {
-				nWorkers = 1
-			}
-		}
-	}
 	if providerSingleThreaded(provider) {
 		nWorkers = 1
+	} else if nWorkers <= 0 {
+		nWorkers = providerDefaultWorkers(provider, m.Kind, device)
+		if nWorkers <= 0 {
+			nWorkers = 2
+			if cfg.GPU != -1 {
+				if free := detectFreeVRAMGB(cfg.GPU); free > 0 && free < 12 {
+					nWorkers = 1
+				}
+			}
+		}
 	}
 	if nWorkers < 1 {
 		nWorkers = 1

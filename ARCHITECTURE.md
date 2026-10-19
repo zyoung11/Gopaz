@@ -173,7 +173,7 @@ CLI 与 Topaz 滑杆使用 -100..100，写入模型前除以 100 并 clamp 到 `
 |---|---|---|
 | `vram` | 显存使用比例 0.1-1 | 每会话显存上限 GB，0=自动 |
 | `instances` | 额外实例数，默认 1 | 会话数，0=自动 |
-| `workers` | 无 | 并行 worker 数，默认 2 |
+| `workers` | 无 | 并行 worker 数，0=自动，CUDA 默认 2，OpenVINO 增强默认 4 |
 | `sensitivity` | Topaz 滑杆 0-100 | 映射为 `rdt = sensitivity/1000` |
 | `rdt` | 原始阈值 -0.01..0.2 | 同义，-1 表示使用 sensitivity |
 
@@ -235,8 +235,8 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 ### 4.4 会话池与并发
 
 - `instances` clamp 到 1..3；增强模型强制为 1。
-- `workers` clamp 到 1..8，默认 2；空闲显存低于 12GB 时自动降为 1。
-- TensorRT、DirectML 和 OpenVINO 强制单会话单 worker：DirectML 不允许同一 Session 并发 Run，TensorRT/OpenVINO 也按单线程保守处理。
+- `workers` clamp 到 1..8；CUDA 默认 2，空闲显存低于 12GB 时自动降为 1；OpenVINO GPU 增强默认 4，Aion/NPU/CPU 默认 1。
+- TensorRT 和 DirectML 强制单会话单 worker：DirectML 不允许同一 Session 并发 Run，TensorRT 多会话实测没有收益。OpenVINO 允许同一 Session 并发 Run，多个 worker 共享一个会话。
 
 ### 4.5 执行后端选择
 
@@ -245,7 +245,7 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 | CUDA | `ort-dll/` | 31 | 默认后端 |
 | TensorRT | `ort-dll/tensorrt/` | 31 | 需要 TensorRT 10 和 CUDA provider 作为回退 |
 | DirectML | `ort-dll/dml/` | 24 | DML 编入运行时，NPU 不可用 |
-| OpenVINO | `ort-dll/openvino/` | 24 | 需要 OpenVINO 运行库，NPU 不支持 Aion |
+| OpenVINO | `ort-dll/openvino/` | 24 | GPU/NPU 默认 FP16，CPU 保持 FP32；需要 OpenVINO 运行库，NPU 不支持 Aion |
 
 每个任务仍是独立子进程，因此一个进程只会加载一个 ORT 运行时。Provider 通过 `--provider` 和 `--device` 选择，子进程启动时把对应目录加入 PATH。DirectML 会预先加载同目录的 `DirectML.dll`；OpenVINO 会把 `libs/` 加入 PATH。
 
@@ -587,7 +587,7 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 | Proteus | 22s → 10s | 24s（1 worker）→ 17s（2 worker） |
 | Gaia | 24s → 13s | 22s |
 
-增强路径默认 2 个 worker 共享一个会话；权重和归一化图在任务开始时预计算。
+CUDA 增强路径默认 2 个 worker 共享一个会话；权重和归一化图在任务开始时预计算。
 
 ### 10.3 瓶颈分析
 
@@ -623,7 +623,7 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 - keepColor：Lab 均值/方差匹配是近似实现，残差约 1 个 8bit 色阶。
 - 参数估计：`tvai_pe` 自动参数估计尚未集成。
 - CUDA 兼容：部分 Blackwell GPU 的 fp16 ReduceMean 溢出已通过图补丁解决；异常时可用 `--gpu -1`。
-- 后端并发：TensorRT、DirectML 和 OpenVINO 当前强制单会话单 worker；DirectML 不允许同一 Session 并发 Run。TensorRT 多会话实测没有收益，DML 多会话在 Intel 核显上会触发 device removed。
+- 后端并发：TensorRT 和 DirectML 强制单会话单 worker；DirectML 不允许同一 Session 并发 Run，TensorRT 多会话实测没有收益。OpenVINO 支持同一 Session 并发，GPU 增强模型默认 4 worker，Aion/NPU/CPU 默认 1。
 - 后端启动：TensorRT 每个新 tile shape 首次构建 engine，Aion 4K 约 1-2 分钟；固定块模型在会话创建时构建，动态模型在预热时构建；OpenVINO NPU 首次编译每个模型/shape 可能数分钟。日志会分别提示构建和就绪耗时。
 - TensorRT 缓存：engine 按模型文件名和 tile 尺寸加 cache prefix。Apollo 的不同 tile 模型 graph hash 相同，缺少 prefix 时会错误复用其他尺寸的 engine 并报 `setInputShape` 失败。
 - DirectML 设备：`device_id` 是 DXGI 枚举顺序，0 不保证是核显；用 `gopaz devices` 查看名称。

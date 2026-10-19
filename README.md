@@ -148,7 +148,7 @@ gopaz upscale -i 输入.mp4 -o 输出.mp4 --model proteus --scale 2 \
 - Proteus 参数取值 -100~100，默认 0：`--denoise` `--detail` `--dehalo` `--sharpen` `--fix-compression` `--deblur`
 - `--kcolor 1`：keepColor 色彩校正
 - `--scene-threshold 6.5`：场景切换阈值
-- `--workers 0`：tile 并行 worker 数，0=自动
+- `--workers 0`：tile 并行 worker 数，0=自动（OpenVINO GPU 增强默认 4，其他默认 2）
 - `--vram 0`：每会话显存上限 GB，0=自动
 
 ### 慢放 / 插帧
@@ -163,7 +163,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 - `--sensitivity 10`：重复帧替换灵敏度 0-100，`rdt = sensitivity/1000`，0 关闭
 - `--rdt -1`：原始 rdt 覆盖，-1 表示使用 `--sensitivity`
 - `--instances 0`：插值并发会话数，0=自动（默认 1 个共享会话）
-- `--workers 0`：插值/增强并行 worker 数，0=自动
+- `--workers 0`：插值/增强并行 worker 数，0=自动（OpenVINO Aion 默认 1，其他默认 2）
 - `--gpu-vram 0`：Aion tile 预算 GB，0=约 2.4M 像素
 - `--vram 0`：每会话显存上限 GB，0=按 tile 自动
 
@@ -201,14 +201,14 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 | `cuda` | NVIDIA GPU | 默认后端，使用 `ort-dll/onnxruntime.dll` |
 | `tensorrt` | NVIDIA GPU | 使用 TensorRT 10，首次运行构建 engine，之后复用缓存 |
 | `dml` | NVIDIA / Intel 核显 | 使用 DirectML 1.24.4，NPU 不支持；设备索引见 `gopaz devices` |
-| `openvino` | Intel 核显 / NPU | GPU.0 支持全部模型；NPU 不支持 Aion |
+| `openvino` | Intel 核显 / NPU | GPU/NPU 默认 FP16，CPU 保持 FP32；GPU.0 支持全部模型；NPU 不支持 Aion |
 
-TensorRT、DirectML 和 OpenVINO 当前强制单线程推理，`--workers` 和 `--instances` 会被限制为 1。OpenVINO NPU 上 Aion 会直接报错，建议换回 `GPU.0`。CUDA/TensorRT 的 GPU 设备仍用高级设置里的 GPU 选择；DirectML/OpenVINO 用左侧栏的 Device 选择。
+TensorRT 和 DirectML 当前强制单线程推理，`--workers` 和 `--instances` 会被限制为 1。OpenVINO 允许同一会话并发，GPU 增强模型默认 4 worker，Aion/NPU/CPU 默认 1。OpenVINO NPU 上 Aion 会直接报错，建议换回 `GPU.0`。CUDA/TensorRT 的 GPU 设备仍用高级设置里的 GPU 选择；DirectML/OpenVINO 用左侧栏的 Device 选择。
 
 ### 首次运行与缓存
 
 - TensorRT 首次为当前模型文件和 tile 尺寸构建 engine：固定块模型在会话创建时构建，Aion 这类动态尺寸模型在预热时构建。Aion 4K 首次通常需要 1-2 分钟，日志会分别显示 `TensorRT session ready` 或 `Warming up TensorRT engine` 的耗时。engine 按模型文件名和 tile 尺寸分开缓存，位于 `%LOCALAPPDATA%\Gopaz\tensorrt`；换分辨率或 `--gpu-vram` 会改变 tile 尺寸并重建。升级到带 cache prefix 的版本后旧缓存不会命中，首次运行会重建一次。
-- OpenVINO NPU 在创建会话时编译模型，首次每个模型和尺寸可能需要数分钟，日志会在编译前提示；之后从 `%LOCALAPPDATA%\Gopaz\openvino` 加载。
+- OpenVINO NPU 在创建会话时编译模型，首次每个模型和尺寸可能需要数分钟，日志会在编译前提示；之后从 `%LOCALAPPDATA%\Gopaz\openvino` 加载。OpenVINO GPU/NPU 默认使用 FP16，CPU 保持 FP32。
 - DirectML 的 `device_id` 按 DXGI 适配器顺序排列，`gopaz devices` 会显示实际名称。0 通常是默认显示适配器，不保证是核显。
 
 ## 环境变量
