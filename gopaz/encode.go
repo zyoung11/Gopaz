@@ -30,6 +30,11 @@ func EncoderRegistry() map[string]*EncoderSpec {
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 18, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
 		},
+		"h264-main-sw": {
+			ID: "h264-main-sw", Desc: "H.264 High, libx264, 8bit",
+			Base:       strings.Fields("-c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -preset veryfast -crf 18"),
+			Extensions: []string{"mov", "mkv", "mp4"},
+		},
 		"h265-main-win-nvidia": {
 			ID: "h265-main-win-nvidia", Desc: "H.265 Main, NVENC, 8bit",
 			Base:       strings.Fields("-c:v hevc_nvenc -profile:v main -pix_fmt yuv420p -b_ref_mode disabled -tag:v hvc1 -g 30"),
@@ -101,7 +106,7 @@ func GetEncoder(id string) (*EncoderSpec, error) {
 // EncoderIDs returns the encoder IDs in a stable order.
 func EncoderIDs() []string {
 	return []string{
-		"h264-main-win-nvidia", "h265-main-win-nvidia", "h265-main10-win-nvidia",
+		"h264-main-win-nvidia", "h264-main-sw", "h265-main-win-nvidia", "h265-main10-win-nvidia",
 		"av1-win-nvidia", "av1-10bit-win-nvidia",
 		"prores-422-hq-win", "prores-422-std-win", "prores-422-lt-win",
 		"ffv1-10bit-444", "ffv1-10bit-420", "vp9-best",

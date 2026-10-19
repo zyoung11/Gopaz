@@ -118,6 +118,7 @@ func cmdServe(args []string) error {
 	}
 
 	srv := &http.Server{Handler: newMux(), ReadHeaderTimeout: 10 * time.Second}
+	defer cleanupPreviewDir()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	go func() {

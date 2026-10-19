@@ -29,3 +29,12 @@ func TestModelDefaults(t *testing.T) {
 		t.Fatalf("proteus overlap = %d, want 48", got)
 	}
 }
+
+// TestProteusParamRanges checks that every Proteus parameter allows negative values.
+func TestProteusParamRanges(t *testing.T) {
+	for _, p := range ModelRegistry()["proteus"].Params {
+		if p.Min != -1 || p.Max != 1 {
+			t.Fatalf("%s range = %v..%v, want -1..1", p.Key, p.Min, p.Max)
+		}
+	}
+}

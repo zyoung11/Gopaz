@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -70,6 +71,9 @@ func RunUpscale(job UpscaleJob) error {
 		Infof("Frame range %d-%d, %d frames", fr.Start, fr.End, total)
 	}
 	audioStart, audioDuration := sourceAudioTrim(info, fr, total, rangeSpecified)
+	if err := os.MkdirAll(filepath.Dir(job.Output), 0o755); err != nil {
+		return fmt.Errorf("failed to create output folder: %w", err)
+	}
 
 	so := job.Model.Temporal
 	if so <= 0 {
@@ -81,7 +85,24 @@ func RunUpscale(job UpscaleJob) error {
 	if err != nil {
 		return err
 	}
-	defer r.Close()
+	defer func() {
+		if r != nil {
+			r.Close()
+		}
+	}()
+	if job.GPU != -1 {
+		if err := probeEnhance(r); err != nil {
+			Warnf("CUDA probe failed (%v), falling back to CPU", err)
+			r.Close()
+			r = nil
+			cfg.GPU = -1
+			cfg.Workers = 1
+			r, err = LoadRunner(cfg)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	th, tw := r.TileSize()
 	Infof("Using tile %dx%d, model %s", th, tw, job.Model.Display)
 
@@ -185,6 +206,7 @@ func RunUpscale(job UpscaleJob) error {
 		if err != nil {
 			writer.Close()
 			enc.Close()
+			os.Remove(tmpVideo)
 			return err
 		}
 		outFrame := rawFrame
@@ -215,8 +237,12 @@ func RunUpscale(job UpscaleJob) error {
 		return err
 	}
 	if err := reader.Err(); err != nil {
+		dec.Close()
 		enc.Close()
 		os.Remove(tmpVideo)
+		if se := dec.Stderr(); se != "" {
+			return fmt.Errorf("decode failed: %w; ffmpeg: %s", err, se)
+		}
 		return fmt.Errorf("decode failed: %w", err)
 	}
 	if err := enc.Close(); err != nil {
@@ -229,6 +255,24 @@ func RunUpscale(job UpscaleJob) error {
 	}
 	os.Remove(tmpVideo)
 	Successf("Done: %s (%d frames, %dx%d)", job.Output, frameIdx, outW, outH)
+	return nil
+}
+
+// probeEnhance checks CUDA inference on one full tile and rejects NaN output.
+func probeEnhance(r *Runner) error {
+	th, tw := r.TileSize()
+	n := max(r.cfg.Model.Temporal, 1)
+	tiles := make([]*Frame, n)
+	for i := range tiles {
+		tiles[i] = NewFrame(tw, th)
+	}
+	out, err := r.ProcessTile(tiles, r.cfg.Scale, 0, 0)
+	if err != nil {
+		return err
+	}
+	if hasNaN(out.Data) {
+		return fmt.Errorf("inference output contains NaN")
+	}
 	return nil
 }
 

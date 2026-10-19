@@ -2,9 +2,9 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -195,6 +195,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	so := DefaultSessionOptions()
 	so.CUDA = cfg.GPU != -1
 	if cfg.GPU != -1 {
+		if err := applyCUDNNAlgoFromEnv(&so); err != nil {
+			return nil, err
+		}
 		so.ProviderOpts = map[string]string{"prefer_nhwc": "1"}
 		if m.Kind == KindInterp {
 			so.ProviderOpts["use_tf32"] = "1"
@@ -294,7 +297,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 
 	for _, p := range m.Params {
 		v := cfg.Params[p.Key]
-		r.paramVec[p.Tensor] = math.Max(-1, math.Min(1, v/100.0))
+		r.paramVec[p.Tensor] = clampFloat(v/100.0, p.Min, p.Max)
 	}
 	if m.Kind == KindInterp {
 		r.plan = newInterpPlan(cfg.FW, cfg.FH, tw, th, overlap, r.BatchLimit())
@@ -308,6 +311,22 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 type poolResult struct {
 	pool []*Session
 	err  error
+}
+
+// applyCUDNNAlgoFromEnv selects the cuDNN convolution algorithm from
+// GOPAZ_CUDNN_ALGO, which accepts exhaustive, heuristic, or default.
+func applyCUDNNAlgoFromEnv(so *SessionOptions) error {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("GOPAZ_CUDNN_ALGO"))) {
+	case "", "exhaustive":
+		so.CUDNNAlgo = 0
+	case "heuristic":
+		so.CUDNNAlgo = 1
+	case "default":
+		so.CUDNNAlgo = 2
+	default:
+		return fmt.Errorf("GOPAZ_CUDNN_ALGO must be exhaustive, heuristic, or default")
+	}
+	return nil
 }
 
 // createSessions creates n identically configured sessions concurrently.

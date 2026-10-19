@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // VideoInfo holds the basic video information reported by ffprobe.
@@ -78,8 +79,10 @@ func orientedSize(w, h, rotation int) (int, int) {
 
 // VideoDecoder reads raw RGB24 frames sequentially from an ffmpeg pipe.
 type VideoDecoder struct {
-	cmd    *exec.Cmd
-	stdout *bufio.Reader
+	cmd       *exec.Cmd
+	stdout    *bufio.Reader
+	stderr    bytes.Buffer
+	closeOnce sync.Once
 }
 
 // NewVideoDecoder starts ffmpeg and streams rawvideo rgb24 to a stdout pipe.
@@ -110,11 +113,16 @@ func NewVideoDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int) (*
 	if err != nil {
 		return nil, err
 	}
-	cmd.Stderr = nil
+	d := &VideoDecoder{cmd: cmd}
+	cmd.Stderr = &d.stderr
 	if err := cmd.Start(); err != nil {
+		if msg := d.Stderr(); msg != "" {
+			return nil, fmt.Errorf("failed to start ffmpeg decoder: %w; ffmpeg: %s", err, msg)
+		}
 		return nil, fmt.Errorf("failed to start ffmpeg decoder: %w", err)
 	}
-	return &VideoDecoder{cmd: cmd, stdout: bufio.NewReaderSize(stdout, 1<<20)}, nil
+	d.stdout = bufio.NewReaderSize(stdout, 1<<20)
+	return d, nil
 }
 
 // ReadFrame reads one frame into buf, which must hold at least w*h*3 bytes.
@@ -129,10 +137,17 @@ func (d *VideoDecoder) ReadFrame(buf []byte) error {
 
 // Close terminates the decoder process.
 func (d *VideoDecoder) Close() {
-	if d.cmd.Process != nil {
-		d.cmd.Process.Kill()
-	}
-	d.cmd.Wait()
+	d.closeOnce.Do(func() {
+		if d.cmd.Process != nil {
+			d.cmd.Process.Kill()
+		}
+		d.cmd.Wait()
+	})
+}
+
+// Stderr returns ffmpeg diagnostics captured during decoding.
+func (d *VideoDecoder) Stderr() string {
+	return strings.TrimSpace(d.stderr.String())
 }
 
 // VideoEncoder encodes raw RGB24 frames into a video file.

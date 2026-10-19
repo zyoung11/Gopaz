@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -145,6 +146,11 @@ var (
 	jobsMu    sync.Mutex
 	jobs      = map[string]*job{}
 	activeJob *job
+
+	previewEncOnce sync.Once
+	previewEncID   string
+	previewMu      sync.Mutex
+	previewDir     string
 )
 
 func resolveOutput(req *jobRequest) (*jobPlan, error) {
@@ -323,7 +329,7 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 	req.EndFrame = end
 	req.OutputDir = dir
 	req.OutputName = "preview"
-	req.Encoder = "h264-main-win-nvidia"
+	req.Encoder = choosePreviewEncoder(localTool("ffmpeg"))
 	req.Container = "mp4"
 	req.Quality = "High"
 	req.RateControl = "cq"
@@ -347,6 +353,46 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 		plan.PreviewDuration = plan.PreviewSourceDuration
 	}
 	return plan, nil
+}
+
+// choosePreviewEncoder picks NVENC when a probe encode succeeds and falls back
+// to libx264 otherwise.
+func choosePreviewEncoder(ffmpeg string) string {
+	previewEncOnce.Do(func() {
+		previewEncID = "h264-main-sw"
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, ffmpeg, "-hide_banner", "-loglevel", "error",
+			"-f", "lavfi", "-i", "color=c=black:s=256x256:d=0.04",
+			"-frames:v", "1", "-c:v", "h264_nvenc", "-pix_fmt", "yuv420p", "-f", "null", "-")
+		if err := cmd.Run(); err == nil {
+			previewEncID = "h264-main-win-nvidia"
+		}
+	})
+	return previewEncID
+}
+
+// trackPreviewDir remembers the current preview folder and removes the previous
+// one.
+func trackPreviewDir(dir string) {
+	previewMu.Lock()
+	old := previewDir
+	previewDir = dir
+	previewMu.Unlock()
+	if old != "" && old != dir {
+		os.RemoveAll(old)
+	}
+}
+
+// cleanupPreviewDir removes the current preview folder.
+func cleanupPreviewDir() {
+	previewMu.Lock()
+	dir := previewDir
+	previewDir = ""
+	previewMu.Unlock()
+	if dir != "" {
+		os.RemoveAll(dir)
+	}
 }
 
 func estimateTotal(mode string, req *jobRequest, info *VideoInfo) int {
@@ -429,6 +475,13 @@ func handleCreateJob(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request")
 		return
 	}
+	jobsMu.Lock()
+	busy := activeJob != nil && activeJob.isRunning()
+	jobsMu.Unlock()
+	if busy {
+		writeError(w, http.StatusConflict, "a job is already running; wait for it to finish or cancel it")
+		return
+	}
 	var plan *jobPlan
 	var err error
 	if req.Preview {
@@ -444,8 +497,14 @@ func handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	jobsMu.Lock()
 	if activeJob != nil && activeJob.isRunning() {
 		jobsMu.Unlock()
+		if plan.Preview {
+			os.RemoveAll(filepath.Dir(plan.OutputPath))
+		}
 		writeError(w, http.StatusConflict, "a job is already running; wait for it to finish or cancel it")
 		return
+	}
+	if plan.Preview {
+		trackPreviewDir(filepath.Dir(plan.OutputPath))
 	}
 	label := "Enhance"
 	if plan.Mode == "interp" {
@@ -628,6 +687,15 @@ func finishJob(j *job, err error) {
 		activeJob = nil
 	}
 	jobsMu.Unlock()
+
+	if j.State != "done" {
+		os.Remove(TempVideoPath(j.Output))
+		if j.Preview {
+			os.RemoveAll(filepath.Dir(j.Output))
+		} else {
+			os.Remove(j.Output)
+		}
+	}
 }
 
 func requestCancel(j *job) bool {

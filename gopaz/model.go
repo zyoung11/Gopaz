@@ -72,11 +72,11 @@ type Model struct {
 func proteusParams() []Param {
 	return []Param{
 		{Key: "deblur", Tensor: 0, GUIName: "Antialias/DeBlur", Min: -1, Max: 1},
-		{Key: "denoise", Tensor: 1, GUIName: "Reduce Noise", Min: 0, Max: 1},
-		{Key: "detail", Tensor: 2, GUIName: "Recover Details", Min: 0, Max: 1},
-		{Key: "dehalo", Tensor: 3, GUIName: "Dehalo", Min: 0, Max: 1},
-		{Key: "sharpen", Tensor: 4, GUIName: "Sharpen", Min: 0, Max: 1},
-		{Key: "fix-compression", Tensor: 5, GUIName: "Fix Compression", Min: 0, Max: 1},
+		{Key: "denoise", Tensor: 1, GUIName: "Reduce Noise", Min: -1, Max: 1},
+		{Key: "detail", Tensor: 2, GUIName: "Recover Details", Min: -1, Max: 1},
+		{Key: "dehalo", Tensor: 3, GUIName: "Dehalo", Min: -1, Max: 1},
+		{Key: "sharpen", Tensor: 4, GUIName: "Sharpen", Min: -1, Max: 1},
+		{Key: "fix-compression", Tensor: 5, GUIName: "Fix Compression", Min: -1, Max: 1},
 	}
 }
 

@@ -2,6 +2,8 @@
 
 Topaz Video AI 的本地复刻工具：提供命令行和本地 Web 界面。输入视频，用本地 GPU 推理，输出超分/修复或慢放/插帧后的视频。纯 Go 实现，**无 cgo、无 C 编译器、无 Python**。
 
+当前只支持 Windows x64。仓库里的非 Windows 分支仅保留给后续移植，不能直接构建。
+
 逆向依据、实现细节、性能数据与已知限制见 [ARCHITECTURE.md](ARCHITECTURE.md)。
 
 ## 功能
@@ -106,7 +108,8 @@ myvideo.mp4           自定义文件名
 - 中间播放器直接播放输入视频，支持播放/暂停和拖拽进度条
 - 右侧模式切换为 Original / Processed；另有左右对比和分割对比，分割线可以左右拖动
 - Preview 按钮从当前播放位置开始处理 2 秒，输入不足 2 秒时处理剩余部分
-- 预览使用临时 H.264 MP4 以便浏览器播放，不改变最终输出编码设置
+- 预览使用临时 H.264 MP4 以便浏览器播放，优先 NVENC，不可用时回退 libx264，不改变最终输出编码设置
+- 预览文件保存在系统临时目录，下一次预览或服务退出时会清理旧文件
 - 预览区间会在原始进度条上高亮；对比模式下的进度条显示预览片段时间轴，并标注对应的源区间
 - 日志面板可展开，显示任务设置、完整命令、帧范围、分块、耗时和警告
 - 输入视频需要浏览器支持的编码；如果原视频无法播放，仍可以查看处理后的预览
@@ -178,6 +181,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 |---|---|
 | `GOPAZ_MODEL_DIR` | `.tz` 模型目录 |
 | `GOPAZ_ORT_DLL` | onnxruntime.dll 路径 |
+| `GOPAZ_CUDNN_ALGO` | cuDNN 卷积算法 exhaustive、heuristic 或 default |
 | `GOPAZ_DEBUG=1` | 输出诊断信息 |
 | `GOPAZ_PROGRESS=json` | 以 JSON 行输出日志和进度，供 Web 界面读取 |
 

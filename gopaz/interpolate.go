@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -71,6 +72,9 @@ func RunInterpolate(job InterpJob) error {
 		Infof("Frame range %d-%d, %d frames", fr.Start, fr.End, total)
 	}
 	audioStart, audioDuration := sourceAudioTrim(info, fr, total, rangeSpecified)
+	if err := os.MkdirAll(filepath.Dir(job.Output), 0o755); err != nil {
+		return fmt.Errorf("failed to create output folder: %w", err)
+	}
 
 	cfg := UpscaleConfig{
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
@@ -246,8 +250,12 @@ func RunInterpolate(job InterpJob) error {
 		return err
 	}
 	if err := reader.Err(); err != nil {
+		dec.Close()
 		enc.Close()
 		os.Remove(tmpVideo)
+		if se := dec.Stderr(); se != "" {
+			return fmt.Errorf("decode failed: %w; ffmpeg: %s", err, se)
+		}
 		return fmt.Errorf("decode failed: %w", err)
 	}
 	wall := time.Since(startAll).Seconds()

@@ -180,7 +180,7 @@ CLI 与 Topaz 滑杆使用 -100..100，写入模型前除以 100 并 clamp 到 `
 
 `ort.go` 不依赖 cgo，通过 `syscall.NewLazyDLL` 加载 `onnxruntime.dll`，调用导出的 `OrtGetApiBase`，再用 API 版本 31 取 `OrtApi` 函数表。
 
-- `OrtApi` 的 50 个函数指针偏移由 `onnxruntime_c_api.h` 解析生成，见 `offsets.go`。
+- `OrtApi` 的 50 个函数指针偏移由 `onnxruntime_c_api.h` 解析生成，见 `offsets.go`；生成器为 `gopaz/tools/genoffsets`，可用 `-check` 校验。
 - `apiFn` 根据偏移读取函数地址，`call` 统一通过 `syscall.SyscallN` 调用。
 - 字符串参数使用 UTF-8 `cstr`，模型路径使用 UTF-16 `wstr`，与 Windows `ORTCHAR_T` 对齐。
 - 错误状态由 `check` 读取错误消息并释放 `OrtStatus`。
@@ -214,7 +214,7 @@ CUDA EP 选项：
 - `prefer_nhwc=1`：模型为 NHWC。
 - `use_tf32=1`：插帧模型启用 TF32。
 - `gpu_mem_limit`：按 tile 面积估算。
-- `cudnn_conv_algo_search`：默认 EXHAUSTIVE；部分 Blackwell 组合会产出 NaN，可切换为 HEURISTIC 或 DEFAULT。
+- `cudnn_conv_algo_search`：默认 EXHAUSTIVE；部分 Blackwell 组合会产出 NaN，可用 `GOPAZ_CUDNN_ALGO=heuristic` 或 `GOPAZ_CUDNN_ALGO=default` 切换。
 
 ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key/value 接口。
 
@@ -486,7 +486,7 @@ dst'[k]   = dst[k] * scale[k] + offset[k]
 
 ### 8.3 编码
 
-编码器注册表包含 11 项：H.264、H.265、H.265 Main10、AV1、AV1 10bit、ProRes 422 HQ、ProRes 422、ProRes 422 LT、FFV1 10bit 4:4:4、FFV1 10bit 4:2:0、VP9。
+编码器注册表包含 12 项：H.264、H.264 软件、H.265、H.265 Main10、AV1、AV1 10bit、ProRes 422 HQ、ProRes 422、ProRes 422 LT、FFV1 10bit 4:4:4、FFV1 10bit 4:2:0、VP9。
 
 码率控制分三种：
 
@@ -583,7 +583,7 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 
 | 失败 | 检测 | 处理 |
 |---|---|---|
-| CUDA 输出 NaN | 启动时小 tile 探测 | 销毁会话，重载 CPU 会话，`instances=1`、`workers=1` |
+| CUDA 输出 NaN | 启动时 tile 探测 | 销毁会话，重载 CPU 会话，`instances=1`、`workers=1` |
 | ONNX 补丁解析失败 | `PatchReduceMeanFp32` 返回错误 | 使用原模型继续，由 NaN 探测决定是否回退 |
 | 模型文件缺失 | `os.Stat` | 返回包含路径的错误 |
 | 主/底部会话创建失败 | 创建结果 | 销毁已创建的会话，返回错误 |
@@ -593,7 +593,7 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 | 显存分配失败 | ORT 错误状态 | 返回错误，建议提高 `--vram` |
 | 帧范围无效 | `ResolveFrameRange` | 返回错误，不启动管线 |
 
-推理探测使用 128×128 输入（单文件模型）或单个 tile（固定块模型），输出含 NaN 即判定 CUDA 路径不可用。
+推理探测使用 128×128 输入（单文件模型）或单个 tile（固定块模型），输出含 NaN 即判定 CUDA 路径不可用。增强模型使用整块 tile 探测。
 
 ## 12. 已知限制
 
