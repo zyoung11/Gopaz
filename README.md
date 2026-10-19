@@ -32,9 +32,10 @@ Apollo 单次推理产出 8 子帧，2/4/8 倍精确对齐；Aion 产出 16 子�
 ## 依赖
 
 1. **ffmpeg / ffprobe** —— 优先用可执行文件同目录或同目录 `bin/` 下的版本，其次 PATH，也可用 `--ffmpeg`/`--ffprobe` 指定
-2. **onnxruntime.dll 1.31+** —— 放在可执行文件同目录的 `ort-dll/`，或用 `GOPAZ_ORT_DLL` 指定；需要 onnxruntime-gpu（CUDA）
+2. **ONNX Runtime** —— CUDA/TensorRT 使用 `ort-dll/onnxruntime.dll` 1.31；DirectML 和 OpenVINO 使用各自子目录里的 1.24 运行时；也可用 `GOPAZ_ORT_DLL` 指定
 3. **模型文件** —— 放在可执行文件同目录的 `models/`，或用 `GOPAZ_MODEL_DIR` 指定；支持明文 `.onnx` 和加密 `.tz`，同名时优先 `.onnx`
 4. **CUDA + cuDNN 9** —— 优先用可执行文件同目录的 `runtime/`（程序会自动加入 PATH），否则需要在系统 PATH 上
+5. **可选后端** —— TensorRT 需要 `ort-dll/tensorrt/`，DirectML 需要 `ort-dll/dml/`，OpenVINO 需要 `ort-dll/openvino/`；缺少时只影响对应 provider
 
 ## 构建
 
@@ -54,9 +55,12 @@ gopaz-portable\
 ├─ ffmpeg.exe
 ├─ ffprobe.exe
 ├─ ort-dll\
-│  ├─ onnxruntime.dll
+│  ├─ onnxruntime.dll                 # CUDA 1.31
 │  ├─ onnxruntime_providers_cuda.dll
-│  └─ onnxruntime_providers_shared.dll
+│  ├─ onnxruntime_providers_shared.dll
+│  ├─ tensorrt\                      # TensorRT + CUDA fallback + tensorrt_libs
+│  ├─ dml\                           # DirectML 1.24.4 + DirectML.dll
+│  └─ openvino\                      # OpenVINO 1.24.1 + provider + libs
 ├─ runtime\              # 可选，CUDA / cuDNN 9 的运行库
 └─ models\               # .onnx 或 .tz，不需要 Topaz 的 JSON
 ```
@@ -65,7 +69,7 @@ gopaz-portable\
 
 - ffmpeg / ffprobe：exe 同目录 → exe 同目录 `bin\` → PATH
 - 模型：`GOPAZ_MODEL_DIR` → exe 同目录 `models\` → exe 同目录 `..\models\`；同名 `.onnx` 优先于 `.tz`
-- ORT：`GOPAZ_ORT_DLL` → exe 同目录 `ort-dll\` → 当前目录 `ort-dll\`
+- ORT：`GOPAZ_ORT_DLL` → exe 同目录 `ort-dll\`；DirectML/OpenVINO 优先 `ort-dll\dml\`、`ort-dll\openvino\`
 - CUDA / cuDNN：exe 同目录 `runtime\`、`cuda\`、`cudnn\` 会自动加入 PATH
 
 ### 预解压模型
@@ -95,6 +99,7 @@ gopaz serve --port 9000 --no-open
 
 - 点击中间的「选择视频」按钮，通过 Windows 原生文件选择器（GO-WinFilePicker）导入，直接把本地路径交给程序，不复制视频
 - 选择模型、倍率、参数和输出设置，选择输出文件夹
+- 左侧模型列表下方可以选择 Provider 和 Device，选择结果会同步到 CLI 命令
 - 悬停模型按钮或参数标签会显示对应说明，中文界面使用对应翻译
 - 点「开始处理」，底部显示进度、处理速度 fps、剩余时间和日志；可以取消当前任务
 - 输出文件名默认自动生成，也可以点击文件名输入框改成自定义名字；留空恢复自动命名
@@ -180,11 +185,24 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 ### 其他
 
 ```bash
---gpu -2          # -2 自动 / -1 CPU / 0+ 设备号
---threads 4       # 推理线程数
---overlap 0       # 分块重叠，0=自动（增强/Apollo 48，Aion 32）
---start 0 --end 99  # 只处理指定帧范围，音轨同步裁剪
+--provider cuda      # cuda / tensorrt / dml / openvino / cpu
+--device 0           # DML 用 0/1，OpenVINO 用 GPU.0/NPU/CPU
+--gpu -2             # -2 自动 / -1 CPU / 0+ 设备号，适用于 CUDA/TensorRT
+--threads 4          # 推理线程数
+--overlap 0          # 分块重叠，0=自动（增强/Apollo 48，Aion 32）
+--start 0 --end 99   # 只处理指定帧范围，音轨同步裁剪
 ```
+
+### 推理后端
+
+| Provider | 设备 | 说明 |
+|---|---|---|
+| `cuda` | NVIDIA GPU | 默认后端，使用 `ort-dll/onnxruntime.dll` |
+| `tensorrt` | NVIDIA GPU | 使用 TensorRT 10，首次运行构建 engine，之后复用缓存 |
+| `dml` | NVIDIA / Intel 核显 | 使用 DirectML 1.24.4，NPU 不支持 |
+| `openvino` | Intel 核显 / NPU | GPU.0 支持全部模型；NPU 不支持 Aion |
+
+TensorRT、DirectML 和 OpenVINO 当前强制单线程推理，`--workers` 和 `--instances` 会被限制为 1。OpenVINO NPU 上 Aion 会直接报错，建议换回 `GPU.0`。CUDA/TensorRT 的 GPU 设备仍用高级设置里的 GPU 选择；DirectML/OpenVINO 用左侧栏的 Device 选择。TensorRT 首次运行会构建 engine，Aion 可能较久，之后缓存在 `%LOCALAPPDATA%\Gopaz\tensorrt`。
 
 ## 环境变量
 

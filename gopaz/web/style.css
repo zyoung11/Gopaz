@@ -1414,3 +1414,9 @@ input[type="range"]::-moz-range-thumb {
 .tooltip-body strong {
   color: var(--text);
 }
+
+.compute {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}

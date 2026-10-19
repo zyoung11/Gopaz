@@ -40,6 +40,8 @@ type jobRequest struct {
 	AudioCodec     string             `json:"audioCodec"`
 	AudioBitrate   int                `json:"audioBitrate"`
 	GPU            int                `json:"gpu"`
+	Provider       string             `json:"provider"`
+	Device         string             `json:"device"`
 	Threads        int                `json:"threads"`
 	Workers        int                `json:"workers"`
 	VramGB         float64            `json:"vram"`
@@ -59,7 +61,7 @@ func defaultJobRequest() jobRequest {
 	return jobRequest{
 		Mode: "enhance", Model: "proteus", Scale: 2, Factor: 2,
 		Encoder: "h265-main-win-nvidia", Quality: "High", RateControl: "cq",
-		AudioCodec: "copy", GPU: -2, KColor: true, SceneThreshold: 6.5,
+		AudioCodec: "copy", GPU: -2, Provider: "cuda", KColor: true, SceneThreshold: 6.5,
 		StartFrame: -1, EndFrame: -1, Sensitivity: 10, RDT: -1,
 	}
 }
@@ -420,6 +422,7 @@ func buildJobArgs(req *jobRequest, plan *jobPlan) []string {
 		"--model", plan.Model.Key, "--encoder", plan.Encoder.ID,
 		"--quality", req.Quality, "--rate-control", req.RateControl,
 		"--audio-codec", req.AudioCodec,
+		"--provider", req.Provider, "--device", req.Device,
 		"--gpu", itoa(req.GPU), "--threads", itoa(req.Threads),
 		"--workers", itoa(req.Workers), "--vram", ftoa(req.VramGB),
 		"--overlap", itoa(req.Overlap),

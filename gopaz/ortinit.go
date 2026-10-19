@@ -7,48 +7,66 @@ import (
 	"strings"
 )
 
-// initORT locates and initializes onnxruntime.dll. The search order is:
-//  1. the GOPAZ_ORT_DLL environment variable
-//  2. ort-dll/onnxruntime.dll next to the executable
-//  3. ort-dll/onnxruntime.dll in the current working directory
-//
-// Before loading, the runtime, cuda, cudnn, and program directories next to the
-// executable are prepended to PATH so a portable layout needs no launcher script.
-func initORT() error {
+// initORT locates and initializes the onnxruntime library for a provider.
+func initORT(provider Provider) error {
+	exeDir := ""
 	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		paths := make([]string, 0, 4)
-		for _, sub := range []string{"runtime", "cuda", "cudnn"} {
-			p := filepath.Join(dir, sub)
-			if st, err := os.Stat(p); err == nil && st.IsDir() {
-				paths = append(paths, p)
-			}
-		}
-		paths = append(paths, dir)
+		exeDir = filepath.Dir(exe)
+	}
+	paths := providerPaths(provider, exeDir)
+	if len(paths) > 0 {
 		os.Setenv("PATH", strings.Join(paths, string(os.PathListSeparator))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	}
+
 	cands := []string{}
 	if v := os.Getenv("GOPAZ_ORT_DLL"); v != "" {
 		cands = append(cands, v)
 	}
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		cands = append(cands,
-			filepath.Join(dir, "ort-dll", "onnxruntime.dll"),
-			filepath.Join(dir, "onnxruntime.dll"),
-		)
+	if exeDir != "" {
+		if provider != ProviderCUDA && provider != ProviderCPU {
+			cands = append(cands, filepath.Join(exeDir, "ort-dll", string(provider), "onnxruntime.dll"))
+		}
+		cands = append(cands, filepath.Join(exeDir, "ort-dll", "onnxruntime.dll"), filepath.Join(exeDir, "onnxruntime.dll"))
 	}
 	if wd, err := os.Getwd(); err == nil {
+		if provider != ProviderCUDA && provider != ProviderCPU {
+			cands = append(cands, filepath.Join(wd, "ort-dll", string(provider), "onnxruntime.dll"))
+		}
 		cands = append(cands, filepath.Join(wd, "ort-dll", "onnxruntime.dll"))
 	}
 	for _, c := range cands {
 		if st, err := os.Stat(c); err == nil && !st.IsDir() {
-			if err := Init(c); err != nil {
-				return fmt.Errorf("failed to initialize onnxruntime (%s): %w", c, err)
+			if err := Init(c, providerAPIVersion(provider)); err != nil {
+				return fmt.Errorf("failed to initialize onnxruntime for %s (%s): %w", provider, c, err)
 			}
-			Debugf("onnxruntime: %s", c)
+			Debugf("onnxruntime: %s (%s)", c, provider)
 			return nil
 		}
 	}
-	return fmt.Errorf("onnxruntime.dll not found; set GOPAZ_ORT_DLL (requires onnxruntime 1.31+)")
+	expected := filepath.Join(exeDir, "ort-dll", string(provider), "onnxruntime.dll")
+	return fmt.Errorf("onnxruntime.dll for %s not found; expected %s or GOPAZ_ORT_DLL", provider, expected)
+}
+
+// providerPaths returns the directories that must be searchable for provider DLLs.
+func providerPaths(provider Provider, exeDir string) []string {
+	var paths []string
+	if exeDir != "" {
+		for _, sub := range []string{"runtime", "cuda", "cudnn"} {
+			p := filepath.Join(exeDir, sub)
+			if st, err := os.Stat(p); err == nil && st.IsDir() {
+				paths = append(paths, p)
+			}
+		}
+		if provider != ProviderCUDA && provider != ProviderCPU {
+			base := filepath.Join(exeDir, "ort-dll", string(provider))
+			for _, sub := range []string{"", "tensorrt_libs", "libs"} {
+				p := filepath.Join(base, sub)
+				if st, err := os.Stat(p); err == nil && st.IsDir() {
+					paths = append(paths, p)
+				}
+			}
+		}
+		paths = append(paths, exeDir)
+	}
+	return paths
 }

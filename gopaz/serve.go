@@ -55,6 +55,17 @@ type encoderInfo struct {
 	RateControl bool     `json:"rateControl"`
 }
 
+type deviceInfo struct {
+	ID      string `json:"id"`
+	Display string `json:"display"`
+}
+
+type providerInfo struct {
+	ID      string       `json:"id"`
+	Display string       `json:"display"`
+	Devices []deviceInfo `json:"devices"`
+}
+
 type defaultsInfo struct {
 	Encoder      string `json:"encoder"`
 	Quality      string `json:"quality"`
@@ -64,9 +75,10 @@ type defaultsInfo struct {
 }
 
 type configResponse struct {
-	Models   []modelInfo   `json:"models"`
-	Encoders []encoderInfo `json:"encoders"`
-	Defaults defaultsInfo  `json:"defaults"`
+	Models    []modelInfo    `json:"models"`
+	Encoders  []encoderInfo  `json:"encoders"`
+	Providers []providerInfo `json:"providers"`
+	Defaults  defaultsInfo   `json:"defaults"`
 }
 
 type pathRequest struct {
@@ -218,6 +230,19 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	out.Defaults = defaultsInfo{
 		Encoder: "h265-main-win-nvidia", Quality: "High",
 		RateControl: "cq", AudioCodec: "copy", AudioBitrate: 320,
+	}
+	out.Providers = []providerInfo{
+		{ID: "cuda", Display: "CUDA"},
+		{ID: "tensorrt", Display: "TensorRT"},
+		{ID: "dml", Display: "DirectML", Devices: []deviceInfo{
+			{ID: "0", Display: "GPU 0"},
+			{ID: "1", Display: "GPU 1"},
+		}},
+		{ID: "openvino", Display: "OpenVINO", Devices: []deviceInfo{
+			{ID: "GPU.0", Display: "Intel GPU 0"},
+			{ID: "NPU", Display: "Intel NPU"},
+			{ID: "CPU", Display: "CPU"},
+		}},
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -19,6 +19,9 @@ const I18N = {
     "meta.audio": "Audio",
     "meta.noAudio": "No audio",
     "filters.title": "Filters",
+    "compute.title": "Compute",
+    "compute.provider": "Provider",
+    "compute.device": "Device",
     "filters.enhance": "Enhance",
     "filters.interp": "Interpolate",
     "stage.title": "Import a video to start",
@@ -140,6 +143,9 @@ const I18N = {
     "meta.audio": "含音轨",
     "meta.noAudio": "无音轨",
     "filters.title": "滤镜",
+    "compute.title": "计算",
+    "compute.provider": "后端",
+    "compute.device": "设备",
     "filters.enhance": "增强",
     "filters.interp": "插帧",
     "stage.title": "导入视频开始",
@@ -268,6 +274,8 @@ const state = {
   input: null,
   mode: "enhance",
   model: "proteus",
+  provider: "cuda",
+  device: "",
   encoder: "",
   container: "",
   quality: "High",
@@ -496,6 +504,7 @@ async function loadConfig() {
 
   renderFilters();
   populateEncoders();
+  populateProviders();
   selectModel(cfg.models.some((m) => m.key === "proteus") ? "proteus" : cfg.models[0].key);
   resetTaskLabels();
   setStatusKey("status.ready");
@@ -726,6 +735,56 @@ function populateEncoders() {
   updateAudioState();
 }
 
+function providerById(id) {
+  return (state.config.providers || []).find((p) => p.id === id);
+}
+
+function populateProviders() {
+  const select = $("#providerSelect");
+  select.innerHTML = "";
+  for (const provider of state.config.providers || []) {
+    const opt = document.createElement("option");
+    opt.value = provider.id;
+    opt.textContent = provider.display;
+    select.append(opt);
+  }
+  if (!providerById(state.provider)) {
+    state.provider = (state.config.providers && state.config.providers[0] && state.config.providers[0].id) || "cuda";
+  }
+  select.value = state.provider;
+  updateDeviceOptions();
+}
+
+function updateDeviceOptions() {
+  const provider = providerById(state.provider);
+  const field = $("#deviceField");
+  const select = $("#deviceSelect");
+  const devices = (provider && provider.devices) || [];
+  field.hidden = devices.length === 0;
+  select.innerHTML = "";
+  if (devices.length === 0) {
+    state.device = "";
+    return;
+  }
+  for (const device of devices) {
+    const opt = document.createElement("option");
+    opt.value = device.id;
+    opt.textContent = device.display;
+    select.append(opt);
+  }
+  if (!devices.some((d) => d.id === state.device)) {
+    state.device = devices[0].id;
+  }
+  select.value = state.device;
+}
+
+function selectProvider(id) {
+  state.provider = id;
+  state.device = "";
+  updateDeviceOptions();
+  renderCliHint();
+}
+
 function updateContainers() {
   const enc = encoderById(state.encoder);
   const select = $("#containerSelect");
@@ -785,6 +844,8 @@ function renderCliHint() {
     parts.push(`--factor ${state.settings.factor}`, `--sensitivity ${state.settings.sensitivity}`);
   }
   parts.push(`--encoder ${state.encoder}`);
+  if (state.provider !== "cuda") parts.push(`--provider ${state.provider}`);
+  if (state.device) parts.push(`--device ${state.device}`);
   const line = parts.join(" ");
   const el = $("#cliHint");
   el.textContent = line;
@@ -857,6 +918,8 @@ function buildRequest() {
     audioCodec: state.audioCodec,
     audioBitrate: numberFrom("#audioBitrateInput"),
     gpu: numberFrom("#gpuSelect", -2),
+    provider: state.provider,
+    device: state.device,
     threads: numberFrom("#threadsInput"),
     workers: numberFrom("#workersInput"),
     vram: numberFrom("#vramInput"),
@@ -1272,6 +1335,12 @@ function bindEvents() {
   $("#pickInputButton").addEventListener("click", pickInput);
   $("#stagePickButton").addEventListener("click", pickInput);
   $("#changeInputButton").addEventListener("click", pickInput);
+
+  $("#providerSelect").addEventListener("change", () => selectProvider($("#providerSelect").value));
+  $("#deviceSelect").addEventListener("change", () => {
+    state.device = $("#deviceSelect").value;
+    renderCliHint();
+  });
 
   $("#pickOutputDirButton").addEventListener("click", pickOutputDir);
   $("#outputDirInput").addEventListener("change", () => {

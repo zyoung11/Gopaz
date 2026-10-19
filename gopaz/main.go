@@ -72,6 +72,8 @@ func usage() {
 
 通用:
   --gpu     -2自动 -1 CPU 0+设备号 (默认 -2)
+  --provider cuda|tensorrt|dml|openvino 推理后端
+  --device  Provider 设备，DML 用 0/1，OpenVINO 用 GPU.0/NPU/CPU
   --threads 推理线程数
   --overlap 分块重叠，0=自动 (增强/插帧 48, Aion 32)
   --kcolor  keepColor 色彩校正 0/1 (默认 1)
@@ -91,6 +93,8 @@ func cmdUpscale(args []string) error {
 	mk := fs.String("model", "proteus", "模型")
 	scale := fs.Int("scale", 1, "倍率 1/2/4")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
+	provider := fs.String("provider", "cuda", "推理后端")
+	device := fs.String("device", "", "Provider 设备")
 	threads := fs.Int("threads", 0, "线程数")
 	workers := fs.Int("workers", 0, "并行 worker 数，0=自动")
 	vram := fs.Float64("vram", 0, "每会话显存上限 GB，0=自动")
@@ -143,6 +147,7 @@ func cmdUpscale(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
 		Params: params, GPU: *gpu, Threads: *threads, Workers: *workers, VramGB: *vram, Overlap: *overlap,
+		Provider: Provider(*provider), Device: *device,
 		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
 		StartFrame: *start, EndFrame: *end,
 		Encode:    EncodeOptions{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
@@ -164,6 +169,8 @@ func cmdInterpolate(args []string) error {
 	gpuVRAM := fs.Float64("gpu-vram", 0, "Aion tile 预算 GB，0=约 2.4M 像素")
 	vram := fs.Float64("vram", 0, "每会话显存上限 GB，0=按 tile 自动")
 	gpu := fs.Int("gpu", -2, "GPU 设备")
+	provider := fs.String("provider", "cuda", "推理后端")
+	device := fs.String("device", "", "Provider 设备")
 	threads := fs.Int("threads", 0, "线程数")
 	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
 	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
@@ -193,6 +200,7 @@ func cmdInterpolate(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
 		GPU: *gpu, Threads: *threads, Overlap: *overlap,
+		Provider: Provider(*provider), Device: *device,
 		Instances: *instances, Workers: *workers, RDT: *rdt, Sensitivity: *sensitivity, VramGB: *vram, DeviceVRAMGB: *gpuVRAM,
 		StartFrame: *start, EndFrame: *end,
 		Encode:    EncodeOptions{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},

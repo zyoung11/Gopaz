@@ -30,6 +30,8 @@ type InterpJob struct {
 	GPU                  int
 	Threads              int
 	Overlap              int
+	Provider             Provider
+	Device               string
 	StartFrame, EndFrame int
 	Encode               EncodeOptions
 	AudioMode            string
@@ -79,6 +81,7 @@ func RunInterpolate(job InterpJob) error {
 		Model: job.Model, ModelDir: job.ModelDir, Scale: 1,
 		FW: fw, FH: fh, Params: map[string]float64{}, Overlap: job.Overlap, Instances: job.Instances, VramGB: job.VramGB,
 		DeviceVRAMGB: job.DeviceVRAMGB, GPU: job.GPU, Threads: job.Threads, Workers: job.Workers,
+		Provider: job.Provider, Device: job.Device,
 	}
 	r, err := LoadRunner(cfg)
 	if err != nil {

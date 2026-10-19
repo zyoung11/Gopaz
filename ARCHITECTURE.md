@@ -22,7 +22,7 @@ Topaz 的 Nyx、Iris、Rhea、Theia、Artemis 等模型不在实现范围内，�
 | 语言 | Go 1.26，`package main` | 所有核心代码位于 `gopaz/` 根目录 |
 | cgo | 禁用 | ORT 通过 `syscall` 直接调用 C ABI |
 | 平台 | Windows x64 | ORT DLL、CUDA、NVENC、ffmpeg 子进程 |
-| 推理后端 | onnxruntime 1.31+ CUDA EP | 支持 CPU 回退 |
+| 推理后端 | CUDA / TensorRT / DirectML / OpenVINO | 支持 CPU 回退 |
 | 视频 I/O | ffmpeg / ffprobe 子进程 | 解码 RGB24，编码后二次并轨音频 |
 | 像素格式 | 全程 RGB24 | 10bit / YUV 端到端未实现 |
 
@@ -42,7 +42,8 @@ Topaz 的 Nyx、Iris、Rhea、Theia、Artemis 等模型不在实现范围内，�
 | `main.go` | CLI 参数解析、模型/工具路径解析 |
 | `model.go` | 模型注册表、文件名、tile 表、参数、keepColor、时序帧数 |
 | `tz.go` | `.tz` 的 ZipCrypto 解密与 deflate 解压 |
-| `ort.go` `offsets.go` | ONNX Runtime C API 绑定，50 个 `OrtApi` 函数偏移 |
+| `ort.go` `offsets.go` `ortinit.go` | ONNX Runtime C API 绑定、运行时选择与 provider 加载 |
+| `provider.go` | Provider 名称、API 版本、设备参数校验 |
 | `onnxpatch.go` | protobuf 级 ONNX 图修改：fp16 ReduceMean 补丁、输出 fp16 化 |
 | `runner.go` | 模型加载、会话池、tile 推理、输出张量读取 |
 | `upscale.go` | 增强管线：时序窗口、逐帧处理、keepColor、编码 |
@@ -180,7 +181,7 @@ CLI 与 Topaz 滑杆使用 -100..100，写入模型前除以 100 并 clamp 到 `
 
 ### 4.1 C API 绑定
 
-`ort.go` 不依赖 cgo，通过 `syscall.NewLazyDLL` 加载 `onnxruntime.dll`，调用导出的 `OrtGetApiBase`，再用 API 版本 31 取 `OrtApi` 函数表。
+`ort.go` 不依赖 cgo，通过 `syscall.NewLazyDLL` 加载 `onnxruntime.dll`，调用导出的 `OrtGetApiBase`。CUDA/TensorRT 使用 API 版本 31，DirectML/OpenVINO 使用 API 版本 24；现有函数表位置在这两个版本之间保持稳定。
 
 - `OrtApi` 的 50 个函数指针偏移由 `onnxruntime_c_api.h` 解析生成，见 `offsets.go`；生成器为 `gopaz/tools/genoffsets`，可用 `-check` 校验。
 - `apiFn` 根据偏移读取函数地址，`call` 统一通过 `syscall.SyscallN` 调用。
@@ -235,6 +236,18 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 
 - `instances` clamp 到 1..3；增强模型强制为 1。
 - `workers` clamp 到 1..8，默认 2；空闲显存低于 12GB 时自动降为 1。
+- TensorRT、DirectML 和 OpenVINO 强制单会话单 worker：DirectML 不允许同一 Session 并发 Run，TensorRT/OpenVINO 也按单线程保守处理。
+
+### 4.5 执行后端选择
+
+| Provider | 运行时目录 | ORT API | 备注 |
+|---|---|---|---|
+| CUDA | `ort-dll/` | 31 | 默认后端 |
+| TensorRT | `ort-dll/tensorrt/` | 31 | 需要 TensorRT 10 和 CUDA provider 作为回退 |
+| DirectML | `ort-dll/dml/` | 24 | DML 编入运行时，NPU 不可用 |
+| OpenVINO | `ort-dll/openvino/` | 24 | 需要 OpenVINO 运行库，NPU 不支持 Aion |
+
+每个任务仍是独立子进程，因此一个进程只会加载一个 ORT 运行时。Provider 通过 `--provider` 和 `--device` 选择，子进程启动时把对应目录加入 PATH。DirectML 会预先加载同目录的 `DirectML.dll`；OpenVINO 会把 `libs/` 加入 PATH。
 - 默认 1 个主会话 + 1 个底部会话，多 worker 共享；插帧时每个主会话按索引配对底部会话。
 - 共享会话的目标是复用模型权重和 CUDA arena，避免多会话把显存翻倍。
 
@@ -606,7 +619,10 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 - keepColor：Lab 均值/方差匹配是近似实现，残差约 1 个 8bit 色阶。
 - 参数估计：`tvai_pe` 自动参数估计尚未集成。
 - CUDA 兼容：部分 Blackwell GPU 的 fp16 ReduceMean 溢出已通过图补丁解决；异常时可用 `--gpu -1`。
-- TensorRT：未实现；Topaz 在 RTX 5090 上也会因 Blackwell 后端不支持而回退 onnxruntime。
+- 后端并发：TensorRT、DirectML 和 OpenVINO 当前强制单会话单 worker；DirectML 不允许同一 Session 并发 Run。
+- DirectML NPU：DirectML 基于 D3D12，当前 Intel NPU 不作为 D3D12 适配器暴露，NPU 只能走 OpenVINO。
+- OpenVINO NPU：Proteus/Gaia/Apollo 可用，Aion 因 vpux 编译器重名检查失败会回退 OpenVINO CPU；aiob 首次编译较慢。
+- 后端版本：DirectML 运行时为 1.24.4，OpenVINO 运行时为 1.24.1；CUDA/TensorRT 使用 1.31。
 - 模型范围：只实现 Proteus、Gaia、Gaia-CG、Apollo、Aion。
 
 ## 13. TODO
@@ -617,7 +633,9 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 - [ ] 重复帧替换与 Topaz 的像素级对比
 - [ ] 10bit/YUV 色彩管线与 keepColor 精确实现
 - [ ] 子帧顺序与时间戳验证
-- [ ] 评估 TensorRT 后端可行性
+- [ ] TensorRT、DirectML、OpenVINO 的多会话并发与性能基准
+- [ ] 解决 OpenVINO NPU 上 Aion 的 vpux 编译失败
+- [ ] 评估 DirectML/OpenVINO 多运行时目录的自动探测
 
 ## 附录 A：逆向方法与证据
 
@@ -655,5 +673,7 @@ Gopaz 使用自己的 `GOPAZ_MODEL_DIR`、`GOPAZ_ORT_DLL`、`GOPAZ_DEBUG`，与 
 | 默认 Aion tile 预算 | 2.4M 像素 | `tiling.go` |
 | tile 对齐 | 32 | `tiling.go` |
 | 默认显存上限 | 2 GiB | `ort.go` |
+| TensorRT engine cache | `%LOCALAPPDATA%/Gopaz/tensorrt` | `runner.go` |
+| OpenVINO cache | `%LOCALAPPDATA%/Gopaz/openvino` | `runner.go` |
 | 帧读取 channel | 2 | `stream.go` |
 | 帧写入 channel | 4 | `stream.go` |

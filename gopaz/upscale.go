@@ -20,6 +20,8 @@ type UpscaleJob struct {
 	Workers         int
 	VramGB          float64
 	Overlap         int
+	Provider        Provider
+	Device          string
 	// KColor enables Lab color correction when the model uses keepColor.
 	KColor bool
 	// SceneThreshold is the scene change threshold; 0 uses the default 6.5.
@@ -37,6 +39,7 @@ func (job UpscaleJob) runnerConfig(fw, fh int) UpscaleConfig {
 		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
 		SceneThreshold: job.SceneThreshold,
 		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, VramGB: job.VramGB,
+		Provider: job.Provider, Device: job.Device,
 	}
 }
 

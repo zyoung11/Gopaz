@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,6 +40,8 @@ type UpscaleConfig struct {
 	VramGB float64
 	// DeviceVRAMGB is the Aion tile budget in GB; 0 uses the default cap.
 	DeviceVRAMGB float64
+	Provider     Provider
+	Device       string
 }
 
 // Runner holds a loaded model session and its tile plan.
@@ -107,11 +110,30 @@ func (r *Runner) BatchLimit() int {
 // LoadRunner unpacks and loads the model, then reads its IO metadata.
 func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	m := cfg.Model
+	provider, err := normalizeProvider(string(cfg.Provider))
+	if err != nil {
+		return nil, err
+	}
+	if cfg.GPU == -1 {
+		provider = ProviderCPU
+	}
+	cfg.Provider = provider
+	device := strings.TrimSpace(cfg.Device)
+	if provider == ProviderOpenVINO {
+		device, err = openVINODevice(device)
+		if err != nil {
+			return nil, err
+		}
+		if strings.EqualFold(device, "NPU") && m.Key == "aion" {
+			return nil, fmt.Errorf("Aion is not supported on the OpenVINO NPU; use GPU.0 instead")
+		}
+	}
+	cfg.Device = device
 	nInst := cfg.Instances
 	if nInst <= 0 {
 		nInst = 1
 	}
-	if m.Kind == KindEnhance {
+	if m.Kind == KindEnhance || providerSingleThreaded(provider) {
 		nInst = 1
 	}
 	if nInst < 1 {
@@ -128,6 +150,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 				nWorkers = 1
 			}
 		}
+	}
+	if providerSingleThreaded(provider) {
+		nWorkers = 1
 	}
 	if nWorkers < 1 {
 		nWorkers = 1
@@ -176,13 +201,15 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		}
 	}
 
-	if err := initORT(); err != nil {
+	if err := initORT(provider); err != nil {
 		return nil, err
 	}
 
 	so := DefaultSessionOptions()
-	so.CUDA = cfg.GPU != -1
-	if cfg.GPU != -1 {
+	so.Provider = provider
+	so.Device = device
+	so.CUDA = providerNeedsCUDA(provider)
+	if providerNeedsCUDA(provider) {
 		if err := applyCUDNNAlgoFromEnv(&so); err != nil {
 			return nil, err
 		}
@@ -191,22 +218,46 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 			so.ProviderOpts["use_tf32"] = "1"
 		}
 	}
-	if cfg.VramGB > 0 {
-		so.GPUMemLimit = uint64(cfg.VramGB * 1024 * 1024 * 1024)
-	} else if m.Kind == KindInterp {
-		baseGB := clampFloat(float64(tw*th)/700000, 3.0, 10.0)
-		perSess := (nWorkers + nInst - 1) / nInst
-		autoGB := baseGB * float64(perSess) / 2
-		if autoGB < 2.0 {
-			autoGB = 2.0
+	if provider == ProviderTensorRT {
+		cacheDir := filepath.Join(cacheRoot(), "tensorrt")
+		if err := os.MkdirAll(cacheDir, 0o755); err == nil {
+			so.TRTCacheDir = cacheDir
 		}
-		so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
-	} else if m.Kind == KindEnhance {
-		autoGB := clampFloat(float64(tw*th*cfg.Scale*cfg.Scale)/600000, 4.0, 12.0)
-		so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
 	}
-	if cfg.GPU >= 0 {
-		so.CUDADeviceID = cfg.GPU
+	if provider == ProviderOpenVINO {
+		cacheDir := filepath.Join(cacheRoot(), "openvino")
+		if err := os.MkdirAll(cacheDir, 0o755); err == nil {
+			so.OVCacheDir = cacheDir
+		}
+	}
+	if provider == ProviderDML {
+		id, err := dmlDeviceID(device)
+		if err != nil {
+			return nil, err
+		}
+		if device == "" && cfg.GPU >= 0 {
+			id = cfg.GPU
+		}
+		so.DMLDeviceID = id
+	}
+	if providerNeedsCUDA(provider) {
+		if cfg.VramGB > 0 {
+			so.GPUMemLimit = uint64(cfg.VramGB * 1024 * 1024 * 1024)
+		} else if m.Kind == KindInterp {
+			baseGB := clampFloat(float64(tw*th)/700000, 3.0, 10.0)
+			perSess := (nWorkers + nInst - 1) / nInst
+			autoGB := baseGB * float64(perSess) / 2
+			if autoGB < 2.0 {
+				autoGB = 2.0
+			}
+			so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
+		} else if m.Kind == KindEnhance {
+			autoGB := clampFloat(float64(tw*th*cfg.Scale*cfg.Scale)/600000, 4.0, 12.0)
+			so.GPUMemLimit = uint64(autoGB * 1024 * 1024 * 1024)
+		}
+		if cfg.GPU >= 0 {
+			so.CUDADeviceID = cfg.GPU
+		}
 	}
 	if cfg.Threads > 0 {
 		so.IntraOpThreads = cfg.Threads
@@ -562,4 +613,13 @@ func tensorToFrameTyped(t *Tensor, w, h int, elemType int) (*Frame, error) {
 		copy(f.Data, src)
 	}
 	return f, nil
+}
+
+// cacheRoot returns the per-user cache directory for provider artifacts.
+func cacheRoot() string {
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		dir = os.TempDir()
+	}
+	return filepath.Join(dir, "Gopaz")
 }

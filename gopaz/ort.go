@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"maps"
+	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"sync"
@@ -29,15 +31,17 @@ const (
 )
 
 var (
-	once       sync.Once
-	apiPtr     uintptr
-	initErr    error
-	dllPath    string
-	cpuMemInfo uintptr
+	once          sync.Once
+	apiPtr        uintptr
+	initErr       error
+	dllPath       string
+	ortDLL        *syscall.LazyDLL
+	ortAPIVersion uint32
+	cpuMemInfo    uintptr
 )
 
 // Init loads the onnxruntime shared library and initializes the global API table.
-func Init(path string) error {
+func Init(path string, apiVersion uint32) error {
 	once.Do(func() {
 		dllPath = path
 		runtime.LockOSThread()
@@ -50,12 +54,14 @@ func Init(path string) error {
 			return
 		}
 		getAPI := *(*uintptr)(unsafe.Pointer(base))
-		tab, _, _ := syscall.SyscallN(getAPI, 31)
+		tab, _, _ := syscall.SyscallN(getAPI, uintptr(apiVersion))
 		if tab == 0 {
-			initErr = fmt.Errorf("GetApi(31) returned nil")
+			initErr = fmt.Errorf("GetApi(%d) returned nil for %s", apiVersion, path)
 			return
 		}
 		apiPtr = tab
+		ortDLL = dll
+		ortAPIVersion = apiVersion
 		var mi uintptr
 		if st := call(ortIdxCreateCpuMemoryInfo, 1, 0, uintptr(unsafe.Pointer(&mi))); st != 0 {
 			initErr = fmt.Errorf("CreateCpuMemoryInfo failed")
@@ -191,6 +197,98 @@ func appendCUDA(so uintptr, opt SessionOptions) error {
 	return check(call(ortIdxSessionOptionsAppendExecutionProvider_CUDA_V2, so, provider), "AppendCUDAV2")
 }
 
+// keyValuePointers builds the C string arrays used by provider option APIs.
+func keyValuePointers(vals map[string]string) ([]*byte, []*byte, []uintptr, []uintptr) {
+	n := len(vals)
+	keys := make([]*byte, 0, n)
+	values := make([]*byte, 0, n)
+	keyPtrs := make([]uintptr, 0, n)
+	valPtrs := make([]uintptr, 0, n)
+	for k, v := range vals {
+		kp := cstr(k)
+		vp := cstr(v)
+		keys = append(keys, kp)
+		values = append(values, vp)
+		keyPtrs = append(keyPtrs, uintptr(unsafe.Pointer(kp)))
+		valPtrs = append(valPtrs, uintptr(unsafe.Pointer(vp)))
+	}
+	return keys, values, keyPtrs, valPtrs
+}
+
+// appendTensorRT appends the TensorRT execution provider with CUDA fallback.
+func appendTensorRT(so uintptr, opt SessionOptions) error {
+	var provider uintptr
+	if err := check(call(ortIdxCreateTensorRTProviderOptions, uintptr(unsafe.Pointer(&provider))), "CreateTensorRTProviderOptions"); err != nil {
+		return err
+	}
+	defer call(ortIdxReleaseTensorRTProviderOptions, provider)
+	vals := map[string]string{
+		"device_id":                      strconv.Itoa(opt.CUDADeviceID),
+		"trt_fp16_enable":                "1",
+		"trt_builder_optimization_level": "3",
+	}
+	if opt.TRTCacheDir != "" {
+		vals["trt_engine_cache_enable"] = "1"
+		vals["trt_engine_cache_path"] = opt.TRTCacheDir
+		vals["trt_timing_cache_enable"] = "1"
+		vals["trt_timing_cache_path"] = opt.TRTCacheDir
+	}
+	keys, values, keyPtrs, valPtrs := keyValuePointers(vals)
+	st := call(ortIdxUpdateTensorRTProviderOptions, provider,
+		uintptr(unsafe.Pointer(&keyPtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(len(vals)))
+	runtime.KeepAlive(keys)
+	runtime.KeepAlive(values)
+	if err := check(st, "UpdateTensorRTProviderOptions"); err != nil {
+		return err
+	}
+	return check(call(ortIdxSessionOptionsAppendExecutionProvider_TensorRT_V2, so, provider), "AppendTensorRT")
+}
+
+// appendOpenVINO appends the OpenVINO execution provider.
+func appendOpenVINO(so uintptr, opt SessionOptions) error {
+	device := opt.Device
+	if device == "" {
+		device = "GPU.0"
+	}
+	vals := map[string]string{
+		"device_type": device,
+	}
+	if opt.OVCacheDir != "" {
+		vals["cache_dir"] = opt.OVCacheDir
+	}
+	keys, values, keyPtrs, valPtrs := keyValuePointers(vals)
+	st := call(ortIdxSessionOptionsAppendExecutionProvider_OpenVINO_V2, so,
+		uintptr(unsafe.Pointer(&keyPtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(len(vals)))
+	runtime.KeepAlive(keys)
+	runtime.KeepAlive(values)
+	return check(st, "AppendOpenVINO")
+}
+
+// appendDML appends the DirectML execution provider.
+func appendDML(so uintptr, opt SessionOptions) error {
+	if err := check(call(ortIdxDisableMemPattern, so), "DisableMemPattern"); err != nil {
+		return err
+	}
+	if err := check(call(ortIdxSetSessionExecutionMode, so, 0), "SetSessionExecutionMode"); err != nil {
+		return err
+	}
+	if ortDLL == nil {
+		return fmt.Errorf("onnxruntime library is not initialized")
+	}
+	if dllPath != "" {
+		dmlPath := filepath.Join(filepath.Dir(dllPath), "DirectML.dll")
+		if _, err := os.Stat(dmlPath); err == nil {
+			dmlDLL := syscall.NewLazyDLL(dmlPath)
+			if err := dmlDLL.Load(); err != nil {
+				return fmt.Errorf("load DirectML: %w", err)
+			}
+		}
+	}
+	proc := ortDLL.NewProc("OrtSessionOptionsAppendExecutionProvider_DML")
+	st, _, _ := proc.Call(so, uintptr(opt.DMLDeviceID))
+	return check(st, "AppendDML")
+}
+
 // Session represents a loaded model session.
 type Session struct {
 	ptr uintptr
@@ -210,6 +308,11 @@ type SessionOptions struct {
 	CUDNNAlgo int
 	// ProviderOpts adds or overrides provider options through the CUDA EP V2 API.
 	ProviderOpts map[string]string
+	Provider     Provider
+	Device       string
+	TRTCacheDir  string
+	OVCacheDir   string
+	DMLDeviceID  int
 }
 
 // DefaultSessionOptions returns the default configuration with CUDA enabled and
@@ -235,10 +338,32 @@ func buildSessionOptions(opt SessionOptions) (uintptr, error) {
 	}
 	call(ortIdxSetIntraOpNumThreads, so, uintptr(opt.IntraOpThreads))
 	call(ortIdxSetSessionGraphOptimizationLevel, so, uintptr(opt.GraphOptLevel))
-	if opt.CUDA {
+	switch opt.Provider {
+	case ProviderTensorRT:
+		if err := appendTensorRT(so, opt); err != nil {
+			call(ortIdxReleaseSessionOptions, so)
+			return 0, err
+		}
 		if err := appendCUDA(so, opt); err != nil {
 			call(ortIdxReleaseSessionOptions, so)
 			return 0, err
+		}
+	case ProviderDML:
+		if err := appendDML(so, opt); err != nil {
+			call(ortIdxReleaseSessionOptions, so)
+			return 0, err
+		}
+	case ProviderOpenVINO:
+		if err := appendOpenVINO(so, opt); err != nil {
+			call(ortIdxReleaseSessionOptions, so)
+			return 0, err
+		}
+	default:
+		if opt.CUDA {
+			if err := appendCUDA(so, opt); err != nil {
+				call(ortIdxReleaseSessionOptions, so)
+				return 0, err
+			}
 		}
 	}
 	return so, nil
