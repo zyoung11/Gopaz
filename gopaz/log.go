@@ -8,6 +8,7 @@ import (
 
 const (
 	cReset      = "\x1b[0m"
+	cBold       = "\x1b[1m"
 	cBlue       = "\x1b[38;2;138;173;244m"
 	cGreen      = "\x1b[38;2;166;218;149m"
 	cYellow     = "\x1b[38;2;238;212;159m"

@@ -12,8 +12,8 @@ import (
 // cmdPrepare converts encrypted .tz models into prepared .onnx files.
 func cmdPrepare(args []string) error {
 	fs := flag.NewFlagSet("prepare", flag.ExitOnError)
-	dir := fs.String("model-dir", "", "模型目录")
-	force := fs.Bool("force", false, "覆盖已有的 .onnx")
+	dir := fs.String("model-dir", "", "model directory")
+	force := fs.Bool("force", false, "overwrite existing .onnx files")
 	fs.Parse(args)
 
 	modelDir := *dir

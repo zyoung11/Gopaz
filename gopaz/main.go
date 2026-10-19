@@ -48,79 +48,123 @@ func main() {
 	}
 }
 
+const usageLabelWidth = 30
+
+func helpHeader(text string) {
+	fmt.Println(wrap(cBold+cMauve, text))
+}
+
+func helpPadded(rendered string, visible int, desc string) {
+	pad := max(usageLabelWidth-visible, 0)
+	fmt.Printf("  %s%s%s\n", rendered, strings.Repeat(" ", pad), desc)
+}
+
+func helpCommand(label, desc string) {
+	rendered := wrap(cBlue, label)
+	if i := strings.IndexByte(label, ' '); i > 0 {
+		rendered = wrap(cBlue, label[:i]) + wrap(cGreen, label[i:])
+	}
+	helpPadded(rendered, len(label), desc)
+}
+
+func helpOption(label, desc string) {
+	helpPadded(wrap(cYellow, label), len(label), desc)
+}
+
+func helpModel(label, desc string) {
+	helpPadded(wrap(cGreen, label), len(label), desc)
+}
+
 func usage() {
-	fmt.Println(`gopaz - Topaz Video AI 本地复刻 CLI
-
-用法:
-  gopaz              启动本地 Web 界面
-  gopaz serve        -port 8765 -no-open  仅启动 Web 界面
-  gopaz upscale      -i <输入> -o <输出> --model <模型> --scale <1|2|4> [参数...]
-  gopaz interpolate  -i <输入> -o <输出> --model <模型> --factor <N> [参数...]
-  gopaz prepare      把 .tz 解压成明文 .onnx
-  gopaz models       列出可用模型
-  gopaz encoders     列出可用编码器
-  gopaz devices      列出 DML/DirectML 适配器和 OpenVINO 设备
-
-模型:
-  超分:  proteus  gaia  gaia-cg
-  插帧:  apollo  aion
-
-超分参数 (proteus 支持，取值 -100~100):
-  --denoise --detail --dehalo --sharpen --fix-compression --deblur
-
-插帧参数:
-  --factor  慢放倍数 (2,3,4,6,8,10,12,16；输出保持源 FPS，时长变为 N 倍)
-  --sensitivity 10  重复帧替换灵敏度 0-100 (rdt=Sensitivity/1000，0 关闭)
-  --rdt -1          原始 rdt 阈值覆盖 (-0.01~0.2，-1=用 sensitivity)
-
-通用:
-  --gpu     -2自动 -1 CPU 0+设备号 (默认 -2)
-  --provider cuda|tensorrt|dml|openvino 推理后端
-  --device  Provider 设备，DML 索引见 gopaz devices，OpenVINO 用 GPU.0/NPU/CPU
-  --threads 推理线程数
-  --overlap 分块重叠，0=自动 (增强/插帧 48, Aion 32)
-  --kcolor  keepColor 色彩校正 0/1 (默认 1)
-  --scene-threshold 场景切换阈值 (默认 6.5)
-  --instances 0 插值并发会话数 (0=自动，默认 1 个共享会话)
-  --workers 0   插值/增强并行 worker 数 (0=自动，OpenVINO 增强默认 4，Aion/NPU 默认 1)
-  --gpu-vram 0  Aion tile 预算 GB (0=约 2.4M 像素；越小越省显存)
-  --vram    每会话显存上限 GB (0=按 tile 自动)
-  --start --end  处理帧范围
-  --ffmpeg --ffprobe  可执行文件路径 (默认用 exe 同目录或 PATH 上的版本)`)
+	fmt.Println(wrap(cBlue, "gopaz") + " - local Topaz Video AI CLI")
+	fmt.Println()
+	helpHeader("Usage:")
+	helpCommand("gopaz", "Start the local web UI")
+	helpCommand("gopaz serve", "Start the web UI only")
+	helpCommand("gopaz upscale", "Upscale or restore a video")
+	helpCommand("gopaz interpolate", "Slow motion or frame interpolation")
+	helpCommand("gopaz prepare", "Convert .tz models to plain .onnx")
+	helpCommand("gopaz models", "List available models")
+	helpCommand("gopaz encoders", "List available encoders")
+	helpCommand("gopaz devices", "List DirectML and OpenVINO devices")
+	helpCommand("gopaz help", "Show this help")
+	fmt.Println()
+	helpHeader("Models:")
+	helpModel("enhancement", "proteus, gaia, gaia-cg")
+	helpModel("interpolation", "apollo, aion")
+	fmt.Println()
+	helpHeader("Enhancement parameters (Proteus only, -100 to 100):")
+	helpOption("--denoise", "Reduce noise")
+	helpOption("--detail", "Recover details")
+	helpOption("--dehalo", "Remove halos")
+	helpOption("--sharpen", "Sharpen")
+	helpOption("--fix-compression", "Fix compression artifacts")
+	helpOption("--deblur", "Deblur")
+	fmt.Println()
+	helpHeader("Interpolation parameters:")
+	helpOption("--factor <N>", "Slow motion factor 2,3,4,6,8,10,12,16; source FPS is kept and duration becomes N times")
+	helpOption("--sensitivity <n>", "Duplicate replacement sensitivity 0-100; rdt = sensitivity/1000, 0 disables")
+	helpOption("--rdt <v>", "Raw rdt override -0.01 to 0.2; -1 uses sensitivity")
+	fmt.Println()
+	helpHeader("Common options:")
+	helpOption("--gpu <id>", "-2 auto, -1 CPU, 0+ device index (default -2)")
+	helpOption("--provider <name>", "cuda, tensorrt, dml, openvino (default cuda)")
+	helpOption("--device <id>", "DML adapter index from gopaz devices, or OpenVINO GPU.0/NPU/CPU")
+	helpOption("--threads <n>", "Inference thread count")
+	helpOption("--overlap <px>", "Block overlap, 0 = auto (enhancement/interp 48, Aion 32)")
+	helpOption("--kcolor <0|1>", "keepColor correction (default 1)")
+	helpOption("--scene-threshold <v>", "Scene change threshold (default 6.5)")
+	helpOption("--instances <n>", "Interpolation sessions, 0 = auto (one shared session)")
+	helpOption("--workers <n>", "Interpolation/enhancement workers, 0 = auto (OpenVINO enhancement 4, Aion/NPU 1)")
+	helpOption("--gpu-vram <GB>", "Aion tile budget in GB, 0 = about 2.4M pixels")
+	helpOption("--vram <GB>", "Per-session VRAM limit in GB, 0 = auto per tile")
+	helpOption("--start <frame>", "First frame to process")
+	helpOption("--end <frame>", "Last frame to process")
+	helpOption("--ffmpeg <path>", "ffmpeg path (defaults to the executable directory or PATH)")
+	helpOption("--ffprobe <path>", "ffprobe path (defaults to the executable directory or PATH)")
+	fmt.Println()
+	helpHeader("Output options:")
+	helpOption("--encoder <id>", "Video encoder from gopaz encoders (default h265-main-win-nvidia)")
+	helpOption("--quality <name>", "Quality preset High, Mid, Low (default High)")
+	helpOption("--qp <n>", "Constant QP override")
+	helpOption("--rate-control <mode>", "Rate control cq, cbr, vbr (default cq)")
+	helpOption("--bitrate <Mbps>", "Bitrate for cbr/vbr")
+	helpOption("--audio-codec <name>", "Audio codec copy, aac, ac3, pcm, vorbis, none (default copy)")
+	helpOption("--audio-bitrate <kbps>", "Audio bitrate (default 320)")
 }
 
 func cmdUpscale(args []string) error {
 	fs := flag.NewFlagSet("upscale", flag.ExitOnError)
-	in := fs.String("i", "", "输入视频")
-	out := fs.String("o", "", "输出视频")
-	mk := fs.String("model", "proteus", "模型")
-	scale := fs.Int("scale", 1, "倍率 1/2/4")
-	gpu := fs.Int("gpu", -2, "GPU 设备")
-	provider := fs.String("provider", "cuda", "推理后端")
-	device := fs.String("device", "", "Provider 设备")
-	threads := fs.Int("threads", 0, "线程数")
-	workers := fs.Int("workers", 0, "并行 worker 数，0=自动")
-	vram := fs.Float64("vram", 0, "每会话显存上限 GB，0=自动")
-	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
-	kcolor := fs.Int("kcolor", 1, "keepColor 色彩校正 0/1")
-	sceneThreshold := fs.Float64("scene-threshold", 6.5, "场景切换阈值")
-	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
-	ffprobe := fs.String("ffprobe", "", "ffprobe 路径")
-	start := fs.Int("start", -1, "起始帧")
-	end := fs.Int("end", -1, "结束帧")
-	encID := fs.String("encoder", "h265-main-win-nvidia", "视频编码器")
-	quality := fs.String("quality", "High", "质量档 High/Mid/Low")
-	qp := fs.Int("qp", 0, "直接指定 constqp")
-	rc := fs.String("rate-control", "cq", "码率模式 cq/cbr/vbr")
-	bitrate := fs.Int("bitrate", 0, "码率 Mbps")
-	audioCodec := fs.String("audio-codec", "copy", "音频 copy/aac/ac3/pcm/vorbis/none")
-	audioBitrate := fs.Int("audio-bitrate", 0, "音频码率 kbps")
-	denoise := fs.Float64("denoise", 0, "降噪")
-	detail := fs.Float64("detail", 0, "细节")
-	dehalo := fs.Float64("dehalo", 0, "去光晕")
-	sharpen := fs.Float64("sharpen", 0, "锐化")
-	fixComp := fs.Float64("fix-compression", 0, "修复压缩")
-	deblur := fs.Float64("deblur", 0, "去模糊")
+	in := fs.String("i", "", "input video")
+	out := fs.String("o", "", "output video")
+	mk := fs.String("model", "proteus", "model name")
+	scale := fs.Int("scale", 1, "scale factor 1/2/4")
+	gpu := fs.Int("gpu", -2, "GPU device")
+	provider := fs.String("provider", "cuda", "inference provider")
+	device := fs.String("device", "", "provider device")
+	threads := fs.Int("threads", 0, "inference thread count")
+	workers := fs.Int("workers", 0, "parallel workers, 0 = auto")
+	vram := fs.Float64("vram", 0, "per-session VRAM limit in GB, 0 = auto")
+	overlap := fs.Int("overlap", 0, "block overlap, 0 = auto")
+	kcolor := fs.Int("kcolor", 1, "keepColor correction 0/1")
+	sceneThreshold := fs.Float64("scene-threshold", 6.5, "scene change threshold")
+	ffmpeg := fs.String("ffmpeg", "", "ffmpeg path")
+	ffprobe := fs.String("ffprobe", "", "ffprobe path")
+	start := fs.Int("start", -1, "first frame")
+	end := fs.Int("end", -1, "last frame")
+	encID := fs.String("encoder", "h265-main-win-nvidia", "video encoder")
+	quality := fs.String("quality", "High", "quality preset High/Mid/Low")
+	qp := fs.Int("qp", 0, "constant QP override")
+	rc := fs.String("rate-control", "cq", "rate control cq/cbr/vbr")
+	bitrate := fs.Int("bitrate", 0, "bitrate in Mbps")
+	audioCodec := fs.String("audio-codec", "copy", "audio codec copy/aac/ac3/pcm/vorbis/none")
+	audioBitrate := fs.Int("audio-bitrate", 0, "audio bitrate in kbps")
+	denoise := fs.Float64("denoise", 0, "reduce noise")
+	detail := fs.Float64("detail", 0, "recover details")
+	dehalo := fs.Float64("dehalo", 0, "remove halos")
+	sharpen := fs.Float64("sharpen", 0, "sharpen")
+	fixComp := fs.Float64("fix-compression", 0, "fix compression artifacts")
+	deblur := fs.Float64("deblur", 0, "deblur")
 	fs.Parse(args)
 
 	if *in == "" || *out == "" {
@@ -161,32 +205,32 @@ func cmdUpscale(args []string) error {
 
 func cmdInterpolate(args []string) error {
 	fs := flag.NewFlagSet("interpolate", flag.ExitOnError)
-	in := fs.String("i", "", "输入视频")
-	out := fs.String("o", "", "输出视频")
-	mk := fs.String("model", "apollo", "模型")
-	factor := fs.Int("factor", 2, "慢放倍数")
-	instances := fs.Int("instances", 0, "插值并发会话数，0=自动（默认 1 个共享会话）")
-	workers := fs.Int("workers", 0, "插值并行 worker 数，0=自动")
-	rdt := fs.Float64("rdt", -1, "原始去重阈值，-1=使用 --sensitivity")
-	sensitivity := fs.Int("sensitivity", 10, "重复帧替换灵敏度 0-100，0 关闭")
-	gpuVRAM := fs.Float64("gpu-vram", 0, "Aion tile 预算 GB，0=约 2.4M 像素")
-	vram := fs.Float64("vram", 0, "每会话显存上限 GB，0=按 tile 自动")
-	gpu := fs.Int("gpu", -2, "GPU 设备")
-	provider := fs.String("provider", "cuda", "推理后端")
-	device := fs.String("device", "", "Provider 设备")
-	threads := fs.Int("threads", 0, "线程数")
-	overlap := fs.Int("overlap", 0, "分块重叠，0=自动")
-	ffmpeg := fs.String("ffmpeg", "", "ffmpeg 路径")
-	ffprobe := fs.String("ffprobe", "", "ffprobe 路径")
-	start := fs.Int("start", -1, "起始帧")
-	end := fs.Int("end", -1, "结束帧")
-	encID := fs.String("encoder", "h265-main-win-nvidia", "视频编码器")
-	quality := fs.String("quality", "High", "质量档 High/Mid/Low")
-	qp := fs.Int("qp", 0, "直接指定 constqp")
-	rc := fs.String("rate-control", "cq", "码率模式 cq/cbr/vbr")
-	bitrate := fs.Int("bitrate", 0, "码率 Mbps")
-	audioCodec := fs.String("audio-codec", "copy", "音频 copy/aac/ac3/pcm/vorbis/none")
-	audioBitrate := fs.Int("audio-bitrate", 0, "音频码率 kbps")
+	in := fs.String("i", "", "input video")
+	out := fs.String("o", "", "output video")
+	mk := fs.String("model", "apollo", "model name")
+	factor := fs.Int("factor", 2, "slow motion factor")
+	instances := fs.Int("instances", 0, "interpolation sessions, 0 = auto (one shared session)")
+	workers := fs.Int("workers", 0, "interpolation workers, 0 = auto")
+	rdt := fs.Float64("rdt", -1, "raw duplicate threshold, -1 uses --sensitivity")
+	sensitivity := fs.Int("sensitivity", 10, "duplicate replacement sensitivity 0-100, 0 disables")
+	gpuVRAM := fs.Float64("gpu-vram", 0, "Aion tile budget in GB, 0 = about 2.4M pixels")
+	vram := fs.Float64("vram", 0, "per-session VRAM limit in GB, 0 = auto per tile")
+	gpu := fs.Int("gpu", -2, "GPU device")
+	provider := fs.String("provider", "cuda", "inference provider")
+	device := fs.String("device", "", "provider device")
+	threads := fs.Int("threads", 0, "inference thread count")
+	overlap := fs.Int("overlap", 0, "block overlap, 0 = auto")
+	ffmpeg := fs.String("ffmpeg", "", "ffmpeg path")
+	ffprobe := fs.String("ffprobe", "", "ffprobe path")
+	start := fs.Int("start", -1, "first frame")
+	end := fs.Int("end", -1, "last frame")
+	encID := fs.String("encoder", "h265-main-win-nvidia", "video encoder")
+	quality := fs.String("quality", "High", "quality preset High/Mid/Low")
+	qp := fs.Int("qp", 0, "constant QP override")
+	rc := fs.String("rate-control", "cq", "rate control cq/cbr/vbr")
+	bitrate := fs.Int("bitrate", 0, "bitrate in Mbps")
+	audioCodec := fs.String("audio-codec", "copy", "audio codec copy/aac/ac3/pcm/vorbis/none")
+	audioBitrate := fs.Int("audio-bitrate", 0, "audio bitrate in kbps")
 	fs.Parse(args)
 	if *in == "" || *out == "" {
 		return fmt.Errorf("-i and -o are required")
