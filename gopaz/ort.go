@@ -233,6 +233,9 @@ func appendTensorRT(so uintptr, opt SessionOptions) error {
 		vals["trt_timing_cache_enable"] = "1"
 		vals["trt_timing_cache_path"] = opt.TRTCacheDir
 	}
+	if opt.TRTCachePrefix != "" {
+		vals["trt_engine_cache_prefix"] = opt.TRTCachePrefix
+	}
 	keys, values, keyPtrs, valPtrs := keyValuePointers(vals)
 	st := call(ortIdxUpdateTensorRTProviderOptions, provider,
 		uintptr(unsafe.Pointer(&keyPtrs[0])), uintptr(unsafe.Pointer(&valPtrs[0])), uintptr(len(vals)))
@@ -307,12 +310,13 @@ type SessionOptions struct {
 	// produces NaN, in which case 1 or 2 can be used.
 	CUDNNAlgo int
 	// ProviderOpts adds or overrides provider options through the CUDA EP V2 API.
-	ProviderOpts map[string]string
-	Provider     Provider
-	Device       string
-	TRTCacheDir  string
-	OVCacheDir   string
-	DMLDeviceID  int
+	ProviderOpts   map[string]string
+	Provider       Provider
+	Device         string
+	TRTCacheDir    string
+	TRTCachePrefix string
+	OVCacheDir     string
+	DMLDeviceID    int
 }
 
 // DefaultSessionOptions returns the default configuration with CUDA enabled and

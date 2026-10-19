@@ -231,13 +231,14 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		Encoder: "h265-main-win-nvidia", Quality: "High",
 		RateControl: "cq", AudioCodec: "copy", AudioBitrate: 320,
 	}
+	dml := dmlDevices()
+	if len(dml) == 0 {
+		dml = []deviceInfo{{ID: "0", Display: "GPU 0"}, {ID: "1", Display: "GPU 1"}}
+	}
 	out.Providers = []providerInfo{
 		{ID: "cuda", Display: "CUDA"},
 		{ID: "tensorrt", Display: "TensorRT"},
-		{ID: "dml", Display: "DirectML", Devices: []deviceInfo{
-			{ID: "0", Display: "GPU 0"},
-			{ID: "1", Display: "GPU 1"},
-		}},
+		{ID: "dml", Display: "DirectML", Devices: dml},
 		{ID: "openvino", Display: "OpenVINO", Devices: []deviceInfo{
 			{ID: "GPU.0", Display: "Intel GPU 0"},
 			{ID: "NPU", Display: "Intel NPU"},

@@ -17,6 +17,7 @@ Topaz Video AI 的本地复刻工具：提供命令行和本地 Web 界面。输
 | `gopaz prepare` | 把 `.tz` 解压成明文 `.onnx` |
 | `gopaz models` | 列出可用模型 |
 | `gopaz encoders` | 列出可用编码器 |
+| `gopaz devices` | 列出 DML 适配器和 OpenVINO 设备 |
 
 | 模型 | 类型 | 倍率 | 参数 |
 |---|---|---|---|
@@ -99,7 +100,7 @@ gopaz serve --port 9000 --no-open
 
 - 点击中间的「选择视频」按钮，通过 Windows 原生文件选择器（GO-WinFilePicker）导入，直接把本地路径交给程序，不复制视频
 - 选择模型、倍率、参数和输出设置，选择输出文件夹
-- 左侧模型列表下方可以选择 Provider 和 Device，选择结果会同步到 CLI 命令
+- 左侧模型列表下方可以选择 Provider 和 Device，DML 设备会显示 DXGI 适配器名称，选择结果会同步到 CLI 命令
 - 悬停模型按钮或参数标签会显示对应说明，中文界面使用对应翻译
 - 点「开始处理」，底部显示进度、处理速度 fps、剩余时间和日志；可以取消当前任务
 - 输出文件名默认自动生成，也可以点击文件名输入框改成自定义名字；留空恢复自动命名
@@ -186,7 +187,7 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 
 ```bash
 --provider cuda      # cuda / tensorrt / dml / openvino / cpu
---device 0           # DML 用 0/1，OpenVINO 用 GPU.0/NPU/CPU
+--device 0           # DML 索引见 gopaz devices，OpenVINO 用 GPU.0/NPU/CPU
 --gpu -2             # -2 自动 / -1 CPU / 0+ 设备号，适用于 CUDA/TensorRT
 --threads 4          # 推理线程数
 --overlap 0          # 分块重叠，0=自动（增强/Apollo 48，Aion 32）
@@ -199,10 +200,16 @@ gopaz interpolate -i 输入.mp4 -o 输出.mp4 --model aion --factor 8 --sensitiv
 |---|---|---|
 | `cuda` | NVIDIA GPU | 默认后端，使用 `ort-dll/onnxruntime.dll` |
 | `tensorrt` | NVIDIA GPU | 使用 TensorRT 10，首次运行构建 engine，之后复用缓存 |
-| `dml` | NVIDIA / Intel 核显 | 使用 DirectML 1.24.4，NPU 不支持 |
+| `dml` | NVIDIA / Intel 核显 | 使用 DirectML 1.24.4，NPU 不支持；设备索引见 `gopaz devices` |
 | `openvino` | Intel 核显 / NPU | GPU.0 支持全部模型；NPU 不支持 Aion |
 
-TensorRT、DirectML 和 OpenVINO 当前强制单线程推理，`--workers` 和 `--instances` 会被限制为 1。OpenVINO NPU 上 Aion 会直接报错，建议换回 `GPU.0`。CUDA/TensorRT 的 GPU 设备仍用高级设置里的 GPU 选择；DirectML/OpenVINO 用左侧栏的 Device 选择。TensorRT 首次运行会构建 engine，Aion 可能较久，之后缓存在 `%LOCALAPPDATA%\Gopaz\tensorrt`。
+TensorRT、DirectML 和 OpenVINO 当前强制单线程推理，`--workers` 和 `--instances` 会被限制为 1。OpenVINO NPU 上 Aion 会直接报错，建议换回 `GPU.0`。CUDA/TensorRT 的 GPU 设备仍用高级设置里的 GPU 选择；DirectML/OpenVINO 用左侧栏的 Device 选择。
+
+### 首次运行与缓存
+
+- TensorRT 首次为当前模型文件和 tile 尺寸构建 engine：固定块模型在会话创建时构建，Aion 这类动态尺寸模型在预热时构建。Aion 4K 首次通常需要 1-2 分钟，日志会分别显示 `TensorRT session ready` 或 `Warming up TensorRT engine` 的耗时。engine 按模型文件名和 tile 尺寸分开缓存，位于 `%LOCALAPPDATA%\Gopaz\tensorrt`；换分辨率或 `--gpu-vram` 会改变 tile 尺寸并重建。升级到带 cache prefix 的版本后旧缓存不会命中，首次运行会重建一次。
+- OpenVINO NPU 在创建会话时编译模型，首次每个模型和尺寸可能需要数分钟，日志会在编译前提示；之后从 `%LOCALAPPDATA%\Gopaz\openvino` 加载。
+- DirectML 的 `device_id` 按 DXGI 适配器顺序排列，`gopaz devices` 会显示实际名称。0 通常是默认显示适配器，不保证是核显。
 
 ## 环境变量
 

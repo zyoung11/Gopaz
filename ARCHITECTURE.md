@@ -248,6 +248,8 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 | OpenVINO | `ort-dll/openvino/` | 24 | 需要 OpenVINO 运行库，NPU 不支持 Aion |
 
 每个任务仍是独立子进程，因此一个进程只会加载一个 ORT 运行时。Provider 通过 `--provider` 和 `--device` 选择，子进程启动时把对应目录加入 PATH。DirectML 会预先加载同目录的 `DirectML.dll`；OpenVINO 会把 `libs/` 加入 PATH。
+
+DirectML 的 `device_id` 对应 `IDXGIFactory::EnumAdapters` 的顺序，`gopaz devices` 用 DXGI 枚举显示实际适配器名称。TensorRT 的 engine 构建时机取决于输入 shape：固定块模型在会话创建时构建，Aion 的动态 shape 在第一次预热时构建；日志分别打印 `TensorRT session ready` 和 `Warming up TensorRT engine`。engine 缓存在 `%LOCALAPPDATA%\Gopaz\tensorrt`，文件名前缀包含模型文件名和 tile 尺寸，避免 Apollo 等固定块模型的不同 tile 变体共享同一 graph hash。同一前缀和 shape 再次运行直接复用，换分辨率或 `--gpu-vram` 会触发重建。OpenVINO 在会话创建时编译模型，NPU 首次编译可能需要数分钟，缓存位于 `%LOCALAPPDATA%\Gopaz\openvino`。
 - 默认 1 个主会话 + 1 个底部会话，多 worker 共享；插帧时每个主会话按索引配对底部会话。
 - 共享会话的目标是复用模型权重和 CUDA arena，避免多会话把显存翻倍。
 
@@ -599,6 +601,8 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 | 失败 | 检测 | 处理 |
 |---|---|---|
 | CUDA 输出 NaN | 启动时 tile 探测 | 销毁会话，重载 CPU 会话，`instances=1`、`workers=1` |
+| TensorRT 预热失败 | 实际 tile 预热 | 返回错误，不回退 CPU |
+| 非 CUDA 推理失败 | 管线返回错误 | 返回原始错误，不回退 CPU |
 | ONNX 补丁解析失败 | `PatchReduceMeanFp32` 返回错误 | 使用原模型继续，由 NaN 探测决定是否回退 |
 | 模型文件缺失 | `os.Stat` | 返回包含路径的错误 |
 | 主/底部会话创建失败 | 创建结果 | 销毁已创建的会话，返回错误 |
@@ -608,7 +612,7 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 | 显存分配失败 | ORT 错误状态 | 返回错误，建议提高 `--vram` |
 | 帧范围无效 | `ResolveFrameRange` | 返回错误，不启动管线 |
 
-推理探测使用 128×128 输入（单文件模型）或单个 tile（固定块模型），输出含 NaN 即判定 CUDA 路径不可用。增强模型使用整块 tile 探测。
+推理探测使用 128×128 输入（单文件模型）或单个 tile（固定块模型），输出含 NaN 即判定 CUDA 路径不可用。增强模型使用整块 tile 探测。该探测只对 CUDA 执行；TensorRT 改为用实际 tile 预热并构建 engine，DirectML/OpenVINO 不做探测。
 
 ## 12. 已知限制
 
@@ -619,7 +623,10 @@ Sensitivity 0：1110s，GPU 约 92%，显存约 11.9GB。测试片本身没有�
 - keepColor：Lab 均值/方差匹配是近似实现，残差约 1 个 8bit 色阶。
 - 参数估计：`tvai_pe` 自动参数估计尚未集成。
 - CUDA 兼容：部分 Blackwell GPU 的 fp16 ReduceMean 溢出已通过图补丁解决；异常时可用 `--gpu -1`。
-- 后端并发：TensorRT、DirectML 和 OpenVINO 当前强制单会话单 worker；DirectML 不允许同一 Session 并发 Run。
+- 后端并发：TensorRT、DirectML 和 OpenVINO 当前强制单会话单 worker；DirectML 不允许同一 Session 并发 Run。TensorRT 多会话实测没有收益，DML 多会话在 Intel 核显上会触发 device removed。
+- 后端启动：TensorRT 每个新 tile shape 首次构建 engine，Aion 4K 约 1-2 分钟；固定块模型在会话创建时构建，动态模型在预热时构建；OpenVINO NPU 首次编译每个模型/shape 可能数分钟。日志会分别提示构建和就绪耗时。
+- TensorRT 缓存：engine 按模型文件名和 tile 尺寸加 cache prefix。Apollo 的不同 tile 模型 graph hash 相同，缺少 prefix 时会错误复用其他尺寸的 engine 并报 `setInputShape` 失败。
+- DirectML 设备：`device_id` 是 DXGI 枚举顺序，0 不保证是核显；用 `gopaz devices` 查看名称。
 - DirectML NPU：DirectML 基于 D3D12，当前 Intel NPU 不作为 D3D12 适配器暴露，NPU 只能走 OpenVINO。
 - OpenVINO NPU：Proteus/Gaia/Apollo 可用，Aion 因 vpux 编译器重名检查失败会回退 OpenVINO CPU；aiob 首次编译较慢。
 - 后端版本：DirectML 运行时为 1.24.4，OpenVINO 运行时为 1.24.1；CUDA/TensorRT 使用 1.31。

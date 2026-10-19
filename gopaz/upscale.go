@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 // UpscaleJob describes one upscale or restoration task.
@@ -92,21 +93,30 @@ func RunUpscale(job UpscaleJob) error {
 			r.Close()
 		}
 	}()
+	th, tw := r.TileSize()
+	Infof("Using tile %dx%d, model %s", tw, th, job.Model.Display)
 	if job.GPU != -1 {
-		if err := probeEnhance(r); err != nil {
-			Warnf("CUDA probe failed (%v), falling back to CPU", err)
-			r.Close()
-			r = nil
-			cfg.GPU = -1
-			cfg.Workers = 1
-			r, err = LoadRunner(cfg)
-			if err != nil {
+		switch r.cfg.Provider {
+		case ProviderCUDA:
+			if err := probeEnhance(r); err != nil {
+				Warnf("CUDA probe failed (%v), falling back to CPU", err)
+				r.Close()
+				r = nil
+				cfg.GPU = -1
+				cfg.Workers = 1
+				r, err = LoadRunner(cfg)
+				if err != nil {
+					return err
+				}
+				th, tw = r.TileSize()
+				Infof("CPU mode using tile %dx%d, model %s", tw, th, job.Model.Display)
+			}
+		case ProviderTensorRT:
+			if err := warmupEnhance(r); err != nil {
 				return err
 			}
 		}
 	}
-	th, tw := r.TileSize()
-	Infof("Using tile %dx%d, model %s", th, tw, job.Model.Display)
 
 	outW, outH := fw*job.Scale, fh*job.Scale
 	encArgs, err := BuildArgs(job.Encode)
@@ -260,7 +270,7 @@ func RunUpscale(job UpscaleJob) error {
 	return nil
 }
 
-// probeEnhance checks CUDA inference on one full tile and rejects NaN output.
+// probeEnhance runs one full-tile inference and rejects NaN output.
 func probeEnhance(r *Runner) error {
 	th, tw := r.TileSize()
 	n := max(r.cfg.Model.Temporal, 1)
@@ -275,6 +285,18 @@ func probeEnhance(r *Runner) error {
 	if hasNaN(out.Data) {
 		return fmt.Errorf("inference output contains NaN")
 	}
+	return nil
+}
+
+// warmupEnhance runs one full tile through TensorRT to build its engine.
+func warmupEnhance(r *Runner) error {
+	th, tw := r.TileSize()
+	Infof("Warming up TensorRT engine for tile %dx%d; the first run may take several minutes", tw, th)
+	start := time.Now()
+	if err := probeEnhance(r); err != nil {
+		return fmt.Errorf("TensorRT warmup failed: %w", err)
+	}
+	Infof("TensorRT engine ready in %.1fs", time.Since(start).Seconds())
 	return nil
 }
 

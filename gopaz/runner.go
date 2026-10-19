@@ -191,7 +191,9 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	}
 
 	var bottomData []byte
+	var bottomPath string
 	if bp, _ := m.BottomTZPath(cfg.ModelDir); bp != "" {
+		bottomPath = bp
 		bottomData, err = readModel(bp)
 		if err != nil {
 			return nil, fmt.Errorf("failed to prepare bottom model: %w", err)
@@ -223,6 +225,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		if err := os.MkdirAll(cacheDir, 0o755); err == nil {
 			so.TRTCacheDir = cacheDir
 		}
+		so.TRTCachePrefix = trtCachePrefix(modelPath)
 	}
 	if provider == ProviderOpenVINO {
 		cacheDir := filepath.Join(cacheRoot(), "openvino")
@@ -262,9 +265,24 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if cfg.Threads > 0 {
 		so.IntraOpThreads = cfg.Threads
 	}
+	sessionStart := time.Now()
+	if provider == ProviderOpenVINO {
+		if strings.EqualFold(device, "NPU") {
+			Infof("Compiling OpenVINO model for NPU; the first run per model and shape may take several minutes")
+		} else {
+			Infof("Preparing OpenVINO model for %s (compiling if not cached)", device)
+		}
+	}
+	if provider == ProviderTensorRT {
+		Infof("Preparing TensorRT engine for %s; the first run per tile shape may take several minutes", trtCachePrefix(modelPath))
+	}
 	env, err := NewEnv()
 	if err != nil {
 		return nil, err
+	}
+	botSO := so
+	if bottomPath != "" {
+		botSO.TRTCachePrefix = trtCachePrefix(bottomPath)
 	}
 	mainCh := make(chan poolResult, 1)
 	go func() {
@@ -275,7 +293,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if bottomData != nil {
 		botCh = make(chan poolResult, 1)
 		go func() {
-			p, e := createSessions(env, bottomData, so, nInst)
+			p, e := createSessions(env, bottomData, botSO, nInst)
 			botCh <- poolResult{pool: p, err: e}
 		}()
 	}
@@ -301,6 +319,12 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 			return nil, fmt.Errorf("failed to load bottom model: %w", br.err)
 		}
 		bpool = br.pool
+	}
+	if provider == ProviderOpenVINO {
+		Infof("OpenVINO model ready in %.1fs", time.Since(sessionStart).Seconds())
+	}
+	if provider == ProviderTensorRT {
+		Infof("TensorRT session ready in %.1fs", time.Since(sessionStart).Seconds())
 	}
 	inputs, err := sess.Inputs()
 	if err != nil {
@@ -559,6 +583,11 @@ func (r *Runner) addInfer(ns int64) {
 	atomic.AddInt64(&r.inferNanos, ns)
 }
 
+// ResetInferTiming clears accumulated inference time after a warmup.
+func (r *Runner) ResetInferTiming() {
+	atomic.StoreInt64(&r.inferNanos, 0)
+}
+
 // extractHRTile extracts the matching tile from the previous output as hr_prev.
 // It returns a zero frame for the first frame, when prevHR is nil.
 func (r *Runner) extractHRTile(w, h, ox, oy int) *Frame {
@@ -622,4 +651,10 @@ func cacheRoot() string {
 		dir = os.TempDir()
 	}
 	return filepath.Join(dir, "Gopaz")
+}
+
+// trtCachePrefix derives a stable per-model engine cache prefix.
+func trtCachePrefix(path string) string {
+	base := filepath.Base(path)
+	return strings.TrimSuffix(base, filepath.Ext(base))
 }

@@ -59,3 +59,22 @@ func TestProviderDevices(t *testing.T) {
 		t.Fatal("unknown OpenVINO device should fail")
 	}
 }
+
+// TestProviderSingleThreaded checks which providers require serial inference.
+func TestProviderSingleThreaded(t *testing.T) {
+	cases := []struct {
+		provider Provider
+		want     bool
+	}{
+		{ProviderCUDA, false},
+		{ProviderTensorRT, true},
+		{ProviderDML, true},
+		{ProviderOpenVINO, true},
+		{ProviderCPU, false},
+	}
+	for _, c := range cases {
+		if got := providerSingleThreaded(c.provider); got != c.want {
+			t.Fatalf("%s: got %v, want %v", c.provider, got, c.want)
+		}
+	}
+}

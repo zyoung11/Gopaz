@@ -101,20 +101,30 @@ func RunInterpolate(job InterpJob) error {
 		plan.tw, plan.th, len(plan.pos), plan.batch, job.Model.Display, subdiv, len(r.pool), r.workers)
 
 	if job.GPU != -1 {
-		if err := probeInterp(r); err != nil {
-			Warnf("CUDA probe failed (%v), falling back to CPU", err)
-			r.Close()
-			r = nil
-			cfg.GPU = -1
-			cfg.Instances = 1
-			cfg.Workers = 1
-			r, err = LoadRunner(cfg)
-			if err != nil {
+		switch r.cfg.Provider {
+		case ProviderCUDA:
+			if err := probeInterp(r); err != nil {
+				Warnf("CUDA probe failed (%v), falling back to CPU", err)
+				r.Close()
+				r = nil
+				cfg.GPU = -1
+				cfg.Instances = 1
+				cfg.Workers = 1
+				r, err = LoadRunner(cfg)
+				if err != nil {
+					return err
+				}
+				plan = r.plan
+				subdiv = r.cfg.Model.OutFrames
+				Infof("CPU mode using tile %dx%d, %d tiles/batch %d", plan.tw, plan.th, len(plan.pos), plan.batch)
+			} else {
+				r.ResetInferTiming()
+			}
+		case ProviderTensorRT:
+			if err := warmupInterp(r); err != nil {
 				return err
 			}
-			plan = r.plan
-			subdiv = r.cfg.Model.OutFrames
-			Infof("CPU mode using tile %dx%d, %d tiles/batch %d", plan.tw, plan.th, len(plan.pos), plan.batch)
+			r.ResetInferTiming()
 		}
 	}
 
@@ -316,6 +326,46 @@ func probeInterp(r *Runner) error {
 	if hasNaNF16(view.f16) {
 		return fmt.Errorf("inference output contains NaN")
 	}
+	return nil
+}
+
+// warmupInterp runs one real tile through TensorRT to build its engine.
+func warmupInterp(r *Runner) error {
+	plan := r.plan
+	if plan == nil || len(plan.pos) == 0 {
+		return nil
+	}
+	nTiles := min(plan.batch, len(plan.pos))
+	if nTiles < 1 {
+		nTiles = len(plan.pos)
+	}
+	tiles := plan.pos[:nTiles]
+	win := []*Frame{NewFrame(1, 1), NewFrame(1, 1), NewFrame(1, 1), NewFrame(1, 1)}
+	var bot *Session
+	if len(r.bottomPool) > 0 {
+		bot = r.bottomPool[0]
+	}
+	w := newInterpWorker(r, r.pool[0], bot, plan)
+	Infof("Warming up TensorRT engine for tile %dx%d; the first run may take several minutes", plan.tw, plan.th)
+	start := time.Now()
+	out, err := w.run(win, tiles)
+	if err != nil {
+		return fmt.Errorf("TensorRT warmup failed: %w", err)
+	}
+	defer out.Destroy()
+	n := len(tiles) * plan.th * plan.tw * r.cfg.Model.OutFrames * 3
+	view, err := r.outputView(out, n)
+	if err != nil {
+		return err
+	}
+	if view.f32 != nil {
+		if hasNaN(view.f32) {
+			return fmt.Errorf("TensorRT warmup output contains NaN")
+		}
+	} else if hasNaNF16(view.f16) {
+		return fmt.Errorf("TensorRT warmup output contains NaN")
+	}
+	Infof("TensorRT engine ready in %.1fs", time.Since(start).Seconds())
 	return nil
 }
 

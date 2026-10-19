@@ -33,6 +33,8 @@ func main() {
 		cmdModels()
 	case "encoders":
 		cmdEncoders()
+	case "devices":
+		cmdDevices()
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -57,6 +59,7 @@ func usage() {
   gopaz prepare      把 .tz 解压成明文 .onnx
   gopaz models       列出可用模型
   gopaz encoders     列出可用编码器
+  gopaz devices      列出 DML/DirectML 适配器和 OpenVINO 设备
 
 模型:
   超分:  proteus  gaia  gaia-cg
@@ -73,7 +76,7 @@ func usage() {
 通用:
   --gpu     -2自动 -1 CPU 0+设备号 (默认 -2)
   --provider cuda|tensorrt|dml|openvino 推理后端
-  --device  Provider 设备，DML 用 0/1，OpenVINO 用 GPU.0/NPU/CPU
+  --device  Provider 设备，DML 索引见 gopaz devices，OpenVINO 用 GPU.0/NPU/CPU
   --threads 推理线程数
   --overlap 分块重叠，0=自动 (增强/插帧 48, Aion 32)
   --kcolor  keepColor 色彩校正 0/1 (默认 1)
@@ -245,6 +248,18 @@ func cmdEncoders() {
 		e := reg[id]
 		fmt.Printf("  %-26s %s\n", e.ID, e.Desc)
 	}
+}
+
+func cmdDevices() {
+	fmt.Println("DML / DirectML devices (DXGI order):")
+	devices := dmlDevices()
+	if len(devices) == 0 {
+		fmt.Println("  (no DXGI hardware adapters found)")
+	}
+	for _, d := range devices {
+		fmt.Printf("  %-4s %s\n", d.ID, d.Display)
+	}
+	fmt.Println("OpenVINO devices: GPU.0, GPU.1, NPU, CPU")
 }
 
 func containsInt(s []int, v int) bool {
