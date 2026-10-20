@@ -49,7 +49,13 @@ func newE2E(t *testing.T) e2eEnv {
 		t.Skipf("model dir not found: %s", modelDir)
 	}
 	if os.Getenv("GOPAZ_ORT_DLL") == "" {
-		for _, cand := range []string{filepath.Join("ort-dll", "onnxruntime.dll"), filepath.Join("..", "portable", "ort-dll", "onnxruntime.dll"), filepath.Join("..", "ort-dll", "onnxruntime.dll")} {
+		for _, cand := range []string{
+			filepath.Join("runtime", "NVIDIA", "CUDA", "onnxruntime.dll"),
+			filepath.Join("..", "portable", "runtime", "NVIDIA", "CUDA", "onnxruntime.dll"),
+			filepath.Join("ort-dll", "onnxruntime.dll"),
+			filepath.Join("..", "portable", "ort-dll", "onnxruntime.dll"),
+			filepath.Join("..", "ort-dll", "onnxruntime.dll"),
+		} {
 			abs, err := filepath.Abs(cand)
 			if err != nil {
 				continue

@@ -40,22 +40,36 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 | 路径 | 内容 |
 |---|---|
 | `gopaz.exe` | 主程序 |
-| `ffmpeg.exe`、`ffprobe.exe` | 视频解码和编码 |
-| `models/` | `.onnx` 或 `.tz` 模型，不需要 Topaz 的 JSON |
-| `ort-dll/` | CUDA/TensorRT 使用的 ONNX Runtime |
-| `ort-dll/tensorrt/` | TensorRT 运行时和依赖 |
-| `ort-dll/dml/` | DirectML 运行时 |
-| `ort-dll/openvino/` | OpenVINO 运行时 |
-| `runtime/` | 可选，CUDA 和 cuDNN 运行库 |
+| `ffmpeg/` | `ffmpeg.exe` 和 `ffprobe.exe`，视频解码和编码 |
+| `models/` | 按模型分子目录 `proteus/`、`gaia/`、`apollo/`、`aion/`；`.onnx` 或 `.tz` 模型，不需要 Topaz 的 JSON |
+| `runtime/OpenVINO/` | ONNX Runtime + OpenVINO 后端，含 `libs/` |
+| `runtime/DirectML/` | ONNX Runtime + DirectML 后端 |
+| `runtime/NVIDIA/CUDA/` | ONNX Runtime + CUDA/TensorRT 后端插件，CUDA、TensorRT、CPU 三个后端共用 |
+| `runtime/NVIDIA/TensorRT/` | TensorRT 运行库 `tensorrt_libs/` |
+| `runtime/NVIDIA/Compute/` | CUDA 计算库 + cuDNN（cublas、cudnn、nvrtc 等），CUDA 和 TensorRT 共用 |
 | `cache/` | 自动创建，TensorRT engine 和 OpenVINO 编译缓存；删除整个文件夹即可清缓存，下次运行重新构建；用 `GOPAZ_CACHE_DIR` 可改到其他位置 |
 
 查找顺序：
 
 | 文件 | 查找顺序 |
 |---|---|
-| ffmpeg / ffprobe | 可执行文件同目录，其次同目录 `bin/`，最后 PATH |
-| 模型 | `GOPAZ_MODEL_DIR`，其次同目录 `models/`，最后同目录 `../models/` |
-| ORT | `GOPAZ_ORT_DLL`，其次同目录 `ort-dll/`；DirectML/OpenVINO 优先各自子目录 |
+| ffmpeg / ffprobe | 可执行文件同目录 `ffmpeg/`，其次同目录、同目录 `bin/`，最后 PATH |
+| 模型 | `GOPAZ_MODEL_DIR`，其次同目录 `models/<模型>/`，最后旧的平铺 `models/` |
+| ORT | `GOPAZ_ORT_DLL`，其次 `runtime/<供应商>/<后端>/`，最后旧的 `ort-dll/` |
+
+## 按需下载
+
+运行时和模型都是可选的，缺什么下载什么，把文件夹放到便携目录对应位置即可，程序在启动时自动识别；Web 界面的后端和模型列表只显示实际存在的内容，放好后刷新页面即可。
+
+| 想用 | 必需 | 可省略 |
+|---|---|---|
+| CUDA | `runtime/NVIDIA/CUDA` | `runtime/NVIDIA/Compute`——系统安装的 CUDA Toolkit + cuDNN 在 PATH 上即可 |
+| TensorRT | `runtime/NVIDIA/CUDA` + `runtime/NVIDIA/TensorRT` | `runtime/NVIDIA/Compute` 同上；系统装了 TensorRT 在 PATH 上可省 `NVIDIA/TensorRT` |
+| DirectML | `runtime/DirectML` | — |
+| OpenVINO | `runtime/OpenVINO` | — |
+| CPU | 任意一份 ONNX Runtime | — |
+
+只放 `runtime/NVIDIA/CUDA` 不足以跑 CUDA：ORT 只是调度层，真正做计算的 cuBLAS/cuDNN 必须由 `NVIDIA/Compute` 文件夹或系统安装提供，二选一。
 
 ## 构建
 

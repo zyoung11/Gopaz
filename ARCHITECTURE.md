@@ -234,10 +234,14 @@ ProviderOpts 为空时走旧版 CUDA EP 结构体，否则走 CUDA EP V2 的 key
 
 | Provider | 运行时目录 | ORT API | 备注 |
 |---|---|---|---|
-| CUDA | `ort-dll/` | 31 | 默认后端 |
-| TensorRT | `ort-dll/tensorrt/` | 31 | 需要 TensorRT 10 和 CUDA provider 作为回退 |
-| DirectML | `ort-dll/dml/` | 24 | DML 编入运行时，NPU 不可用 |
-| OpenVINO | `ort-dll/openvino/` | 24 | GPU/NPU 默认 FP16，CPU 保持 FP32；NPU 不支持 Aion |
+| CUDA | `runtime/NVIDIA/CUDA`、`runtime/NVIDIA/Compute` | 31 | 默认后端 |
+| TensorRT | `runtime/NVIDIA/CUDA`、`runtime/NVIDIA/TensorRT`、`runtime/NVIDIA/Compute` | 31 | 共用 CUDA 的 ORT，TRT 插件随 ORT 同目录加载 |
+| DirectML | `runtime/DirectML` | 24 | DML 编入运行时，NPU 不可用 |
+| OpenVINO | `runtime/OpenVINO` | 24 | GPU/NPU 默认 FP16，CPU 保持 FP32；NPU 不支持 Aion |
+
+ORT 插件（`onnxruntime_providers_*.dll`）必须与 `onnxruntime.dll` 同目录，因此 CUDA/TensorRT 的插件都放在 `runtime/NVIDIA/CUDA`，`runtime/NVIDIA/Compute` 是 CUDA 计算库和 cuDNN，`runtime/NVIDIA/TensorRT` 是 TensorRT 官方运行库，大文件（ORT+CUDA EP、计算库）不重复。旧的 `ort-dll/` 平铺布局仍可兼容加载。
+
+后端和模型支持按需安装：`ProviderAvailable` 和 `Model.Available` 根据实际存在的运行时目录和模型文件过滤 `/api/config` 的后端列表和模型列表，`gopaz models` 同样只列出已安装的模型。计算库（cuBLAS/cuDNN、TensorRT、nvinfer）允许由系统 PATH 提供，因此系统装了 CUDA Toolkit + cuDNN 时可以不带 `runtime/NVIDIA/Compute`。
 
 每个任务仍是独立子进程，因此一个进程只会加载一个 ORT 运行时。Provider 通过 `--provider` 和 `--device` 选择，子进程启动时把对应目录加入 PATH。DirectML 会预先加载同目录的 `DirectML.dll`；OpenVINO 会把 `libs/` 加入 PATH。
 

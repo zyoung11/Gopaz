@@ -205,8 +205,12 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var out configResponse
+	modelDir := resolveModelDir()
 	for _, key := range ModelKeys() {
 		m := ModelRegistry()[key]
+		if !m.Available(modelDir) {
+			continue
+		}
 		kind := "enhance"
 		if m.Kind == KindInterp {
 			kind = "interp"
@@ -234,11 +238,20 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 	if len(out.GPUs) == 0 {
 		out.GPUs = dml
 	}
-	out.Providers = []providerInfo{
+	out.Providers = nil
+	avail := map[string]Provider{
+		"cuda": ProviderCUDA, "tensorrt": ProviderTensorRT,
+		"dml": ProviderDML, "openvino": ProviderOpenVINO,
+	}
+	for _, p := range []providerInfo{
 		{ID: "cuda", Display: "CUDA", Devices: gpus},
 		{ID: "tensorrt", Display: "TensorRT", Devices: gpus},
 		{ID: "dml", Display: "DirectML", Devices: dml},
 		{ID: "openvino", Display: "OpenVINO", Devices: openVINODevices()},
+	} {
+		if ProviderAvailable(avail[p.ID]) {
+			out.Providers = append(out.Providers, p)
+		}
 	}
 	writeJSON(w, http.StatusOK, out)
 }

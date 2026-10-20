@@ -93,6 +93,7 @@ const I18N = {
     "task.enhancing": "Enhancing",
     "task.interpolating": "Interpolating",
     "task.inProgress": "In progress",
+    "models.none": "No model files found in the models folder",
     "task.done": "Done",
     "task.cancelled": "Cancelled",
     "task.failed": "Failed",
@@ -217,6 +218,7 @@ const I18N = {
     "task.enhancing": "增强中",
     "task.interpolating": "插帧中",
     "task.inProgress": "进行中",
+    "models.none": "models 文件夹中未找到模型文件",
     "task.done": "完成",
     "task.cancelled": "已取消",
     "task.failed": "失败",
@@ -506,7 +508,11 @@ async function loadConfig() {
   populateEncoders();
   populateProviders();
   updateGpuOptions();
-  selectModel(cfg.models.some((m) => m.key === "proteus") ? "proteus" : cfg.models[0].key);
+  if (cfg.models.length > 0) {
+    selectModel(cfg.models.some((m) => m.key === "proteus") ? "proteus" : cfg.models[0].key);
+  } else {
+    toast(t("models.none"), true);
+  }
   resetTaskLabels();
   setStatusKey("status.ready");
   renderCliHint();

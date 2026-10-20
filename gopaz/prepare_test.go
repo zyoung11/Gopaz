@@ -83,20 +83,30 @@ func TestModelPathPrefersONNX(t *testing.T) {
 	if err := os.WriteFile(tzPath, []byte("tz"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := modelPathNamed(dir, "model.tz"); err != nil || got != tzPath {
+	if got, err := modelPathNamed(dir, "", "model.tz"); err != nil || got != tzPath {
 		t.Fatalf("tz lookup = %q, %v", got, err)
 	}
 	if err := os.WriteFile(onnxPath, []byte("onnx"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := modelPathNamed(dir, "model.tz"); err != nil || got != onnxPath {
+	if got, err := modelPathNamed(dir, "", "model.tz"); err != nil || got != onnxPath {
 		t.Fatalf("onnx lookup = %q, %v", got, err)
 	}
 	if err := os.WriteFile(onnxPath, nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := modelPathNamed(dir, "model.tz"); err != nil || got != tzPath {
+	if got, err := modelPathNamed(dir, "", "model.tz"); err != nil || got != tzPath {
 		t.Fatalf("empty onnx lookup = %q, %v", got, err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "apollo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	subPath := filepath.Join(dir, "apollo", "sub.tz")
+	if err := os.WriteFile(subPath, []byte("tz"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := modelPathNamed(dir, "apollo", "sub.tz"); err != nil || got != subPath {
+		t.Fatalf("subdir lookup = %q, %v", got, err)
 	}
 }
 

@@ -294,9 +294,13 @@ func cmdInterpolate(args []string) error {
 
 func cmdModels() {
 	reg := ModelRegistry()
+	modelDir := resolveModelDir()
 	fmt.Printf("%-10s %-24s %-8s %-12s %s\n", "KEY", "DISPLAY", "KIND", "SCALES", "PARAMS")
 	for _, k := range ModelKeys() {
 		m := reg[k]
+		if !m.Available(modelDir) {
+			continue
+		}
 		kind := "enhance"
 		if m.Kind == KindInterp {
 			kind = "interp"
@@ -375,7 +379,7 @@ func localTool(name string) string {
 		dirs = append(dirs, wd)
 	}
 	for _, d := range dirs {
-		for _, sub := range []string{"", "bin"} {
+		for _, sub := range []string{"", "bin", "ffmpeg"} {
 			for _, ext := range []string{".exe", ""} {
 				p := filepath.Join(d, sub, name+ext)
 				if st, err := os.Stat(p); err == nil && !st.IsDir() {

@@ -26,7 +26,12 @@ func openVINODLL() *syscall.LazyDLL {
 		bases = append(bases, wd)
 	}
 	for _, base := range bases {
-		for _, sub := range []string{filepath.Join("ort-dll", "openvino", "libs"), filepath.Join("ort-dll", "openvino")} {
+		for _, sub := range []string{
+			filepath.Join("runtime", "OpenVINO", "libs"),
+			filepath.Join("runtime", "OpenVINO"),
+			filepath.Join("ort-dll", "openvino", "libs"),
+			filepath.Join("ort-dll", "openvino"),
+		} {
 			path := filepath.Join(base, sub, "openvino_c.dll")
 			if _, err := os.Stat(path); err != nil {
 				continue

@@ -1,6 +1,44 @@
 package main
 
-import "testing"
+import (
+	"path/filepath"
+	"slices"
+	"testing"
+)
+
+// TestProviderAvailableOverride checks drop-in provider detection with an explicit ORT.
+func TestProviderAvailableOverride(t *testing.T) {
+	t.Setenv("GOPAZ_ORT_DLL", filepath.Join("some", "onnxruntime.dll"))
+	for _, p := range []Provider{ProviderCUDA, ProviderTensorRT, ProviderDML, ProviderOpenVINO, ProviderCPU} {
+		if !ProviderAvailable(p) {
+			t.Fatalf("%s should be available with GOPAZ_ORT_DLL", p)
+		}
+	}
+}
+
+// TestProviderRuntimeDirs checks the modular runtime layout mapping.
+func TestProviderRuntimeDirs(t *testing.T) {
+	trt := providerRuntimeDirs(ProviderTensorRT)
+	for _, want := range []string{
+		filepath.Join("runtime", "NVIDIA", "CUDA"),
+		filepath.Join("runtime", "NVIDIA", "TensorRT"),
+		filepath.Join("runtime", "NVIDIA", "Compute"),
+	} {
+		if !slices.Contains(trt, want) {
+			t.Fatalf("tensorrt dirs %v missing %q", trt, want)
+		}
+	}
+	if len(providerRuntimeDirs(ProviderCUDA)) != 2 {
+		t.Fatalf("cuda dirs = %v", providerRuntimeDirs(ProviderCUDA))
+	}
+	if len(providerRuntimeDirs(ProviderDML)) != 1 {
+		t.Fatalf("dml dirs = %v", providerRuntimeDirs(ProviderDML))
+	}
+	ov := providerRuntimeDirs(ProviderOpenVINO)
+	if len(ov) != 2 || ov[1] != filepath.Join(ov[0], "libs") {
+		t.Fatalf("openvino dirs = %v", ov)
+	}
+}
 
 // TestNormalizeProvider checks provider aliases and API versions.
 func TestNormalizeProvider(t *testing.T) {

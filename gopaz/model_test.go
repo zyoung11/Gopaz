@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func hasTile(tiles [][2]int, w, h int) bool {
 	for _, t := range tiles {
@@ -39,6 +43,40 @@ func TestModelNPUFlags(t *testing.T) {
 		if ModelRegistry()[key].NPUUnsupported {
 			t.Fatalf("%s should run on the NPU", key)
 		}
+	}
+}
+
+// TestModelAvailable checks drop-in model folder detection.
+func TestModelAvailable(t *testing.T) {
+	dir := t.TempDir()
+	m := ModelRegistry()["apollo"]
+	if m.Available(dir) {
+		t.Fatal("empty dir should not be available")
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "apollo"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if m.Available(dir) {
+		t.Fatal("empty subdirectory should not be available")
+	}
+	p := filepath.Join(dir, "apollo", "apo-v8-fp16-576x672-ox.onnx")
+	if err := os.WriteFile(p, []byte("onnx"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Available(dir) {
+		t.Fatal("subdirectory model should be available")
+	}
+	flat := t.TempDir()
+	p = filepath.Join(flat, "apo-v8-fp16-576x672-ox.tz")
+	if err := os.WriteFile(p, []byte("tz"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !m.Available(flat) {
+		t.Fatal("flat layout model should be available")
+	}
+	aion := ModelRegistry()["aion"]
+	if aion.Available(t.TempDir()) {
+		t.Fatal("missing aion should not be available")
 	}
 }
 

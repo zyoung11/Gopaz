@@ -36,6 +36,8 @@ type Param struct {
 type Model struct {
 	// Key is the short CLI name, for example "proteus".
 	Key string
+	// Dir is the models subdirectory holding this model family's files.
+	Dir string
 	// Short is the code used in file names, for example "prob".
 	Short string
 	// Version is the model version, for example "4".
@@ -99,31 +101,31 @@ var apolloTiles = [][2]int{
 func ModelRegistry() map[string]*Model {
 	return map[string]*Model{
 		"proteus": {
-			Key: "proteus", Short: "prob", Version: "4", Kind: KindEnhance,
+			Key: "proteus", Dir: "proteus", Short: "prob", Version: "4", Kind: KindEnhance,
 			Display: "Proteus", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: proteusParams(), FilePrefix: "prob-v4-fgnet", FileHasScale: true,
 			Temporal: 2, CenterIdx: 1, KeepColor: true,
 		},
 		"gaia": {
-			Key: "gaia", Short: "ghq", Version: "5", Kind: KindEnhance,
+			Key: "gaia", Dir: "gaia", Short: "ghq", Version: "5", Kind: KindEnhance,
 			Display: "Gaia (High Quality)", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: nil, FilePrefix: "ghq-v5-gaia", FileHasScale: true,
 			Temporal: 5, CenterIdx: 2, KeepColor: true,
 		},
 		"gaia-cg": {
-			Key: "gaia-cg", Short: "gcg", Version: "5", Kind: KindEnhance,
+			Key: "gaia-cg", Dir: "gaia", Short: "gcg", Version: "5", Kind: KindEnhance,
 			Display: "Gaia (Computer Generated)", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: nil, FilePrefix: "gcg-v5-gaia", FileHasScale: true,
 			Temporal: 5, CenterIdx: 2, KeepColor: true,
 		},
 		"apollo": {
-			Key: "apollo", Short: "apo", Version: "8", Kind: KindInterp,
+			Key: "apollo", Dir: "apollo", Short: "apo", Version: "8", Kind: KindInterp,
 			Display: "Apollo", Scales: nil, TileHW: apolloTiles,
 			Params: nil, FilePrefix: "apo-v8", FileHasScale: false,
 			OutFrames: 8,
 		},
 		"aion": {
-			Key: "aion", Short: "aion", Version: "1", Kind: KindInterp,
+			Key: "aion", Dir: "aion", Short: "aion", Version: "1", Kind: KindInterp,
 			Display: "Aion", Scales: nil,
 			Params: nil, SingleFile: "aion-v1-fp16-ox.tz",
 			OutFrames: 16, BottomFile: "aiob-v1-fp16-ox.tz", BlockOverlap: 32,
@@ -163,7 +165,7 @@ func (m *Model) BottomTZPath(modelDir string) (string, error) {
 
 func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale int) (string, error) {
 	if single != "" {
-		return modelPathNamed(modelDir, single)
+		return modelPathNamed(modelDir, m.Dir, single)
 	}
 	var name string
 	if m.FileHasScale {
@@ -171,20 +173,39 @@ func (m *Model) tzPathNamed(single string, modelDir string, tileW, tileH, scale 
 	} else {
 		name = fmt.Sprintf("%s-fp16-%dx%d-ox.tz", m.FilePrefix, tileH, tileW)
 	}
-	return modelPathNamed(modelDir, name)
+	return modelPathNamed(modelDir, m.Dir, name)
 }
 
 // modelPathNamed prefers a prepared .onnx file over its .tz source.
-func modelPathNamed(modelDir, name string) (string, error) {
-	tz := filepath.Join(modelDir, name)
-	onnx := strings.TrimSuffix(tz, ".tz") + ".onnx"
-	if st, err := os.Stat(onnx); err == nil && st.Size() > 0 {
-		return onnx, nil
+// It searches the model family subdirectory first and then the flat model directory.
+func modelPathNamed(modelDir, sub, name string) (string, error) {
+	for _, dir := range []string{filepath.Join(modelDir, sub), modelDir} {
+		tz := filepath.Join(dir, name)
+		onnx := strings.TrimSuffix(tz, ".tz") + ".onnx"
+		if st, err := os.Stat(onnx); err == nil && st.Size() > 0 {
+			return onnx, nil
+		}
+		if _, err := os.Stat(tz); err == nil {
+			return tz, nil
+		}
 	}
-	if _, err := os.Stat(tz); err == nil {
-		return tz, nil
+	return "", fmt.Errorf("model file missing: %s in %s", name, modelDir)
+}
+
+// Available reports whether the model files are present in the model directory.
+func (m *Model) Available(modelDir string) bool {
+	patterns := []string{m.FilePrefix + "-fp16-*.onnx", m.FilePrefix + "-fp16-*.tz"}
+	if m.SingleFile != "" {
+		patterns = []string{strings.TrimSuffix(m.SingleFile, ".tz") + ".onnx", m.SingleFile}
 	}
-	return "", fmt.Errorf("model file missing: %s or %s", onnx, tz)
+	for _, dir := range []string{filepath.Join(modelDir, m.Dir), modelDir} {
+		for _, p := range patterns {
+			if hits, err := filepath.Glob(filepath.Join(dir, p)); err == nil && len(hits) > 0 {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // HasParam reports whether the model supports the given parameter key.

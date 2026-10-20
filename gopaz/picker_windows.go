@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 
-	winfilepicker "github.com/zyoung11/GO-WinFilePicker"
+	winfilepicker "gopaz/winfilepicker"
 )
 
 var pickerMu sync.Mutex
@@ -16,7 +16,7 @@ func pickVideoFile() (string, error) {
 	defer pickerMu.Unlock()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	return winfilepicker.SelectFile("Select Video", videoExtensions...)
+	return winfilepicker.SelectFile("Select Video", videoExtensions)
 }
 
 func pickOutputFolder() (string, error) {
