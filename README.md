@@ -1,14 +1,14 @@
 <div align="center">
 <pre>
-  .g8"""bgd                                      
-.dP'     `M                                      
-dM'       `   ,pW"Wq.`7MMpdMAo.  ,6"Yb.  M"""MMV 
-MM           6W'   `Wb MM   `Wb 8)   MM  '  AMV  
-MM.    `7MMF'8M     M8 MM    M8  ,pm9MM    AMV   
-`Mb.     MM  YA.   ,A9 MM   ,AP 8M   MM   AMV  , 
-  `"bmmmdPY   `Ybmd9'  MMbmmd'  `Moo9^Yo.AMMmmmM 
-                       MM                        
-                     .JMML.                      </pre>
+  ░██████                                              
+ ░██   ░██                                             
+░██         ░███████  ░████████   ░██████   ░█████████ 
+░██  █████ ░██    ░██ ░██    ░██       ░██       ░███  
+░██     ██ ░██    ░██ ░██    ░██  ░███████     ░███    
+ ░██  ░███ ░██    ░██ ░███   ░██ ░██   ░██   ░███      
+  ░█████░█  ░███████  ░██░█████   ░█████░██ ░█████████ 
+                      ░██                              
+                      ░██                              </pre>
 </div>
 
 
