@@ -37,6 +37,21 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 | apollo | 插帧 | 2-16 | 无 |
 | aion | 插帧 | 2-16 | 无 |
 
+## 下载
+
+到 [Releases](https://github.com/zyoung11/Gopaz/releases) 按需下载资源，全部解压到同一个目录即可使用：
+
+| 资源 | 需要它的场景 |
+|---|---|
+| `gopaz.exe` | 必需 |
+| `ffmpeg.zip` | 必需 |
+| `runtime/NVIDIA/CUDA.zip` | CUDA / TensorRT / CPU |
+| `runtime/NVIDIA/Compute.zip` | CUDA / TensorRT；系统已装 CUDA Toolkit + cuDNN 可省 |
+| `runtime/NVIDIA/TensorRT.zip` | 仅 TensorRT |
+| `runtime/DirectML.zip` | 仅 DirectML |
+| `runtime/OpenVINO.zip` | 仅 OpenVINO |
+| `models/*.zip` | 按模型拆分，下载要用的即可 |
+
 ## 依赖
 
 1. **ffmpeg / ffprobe**：优先使用可执行文件同目录或 `bin/` 下的版本，其次 PATH，也可以用 `--ffmpeg`/`--ffprobe` 指定。
@@ -47,19 +62,40 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 
 ## 便携目录
 
-可以把程序、运行时和模型放在同一个目录，直接运行，不需要安装。
+可以把程序、运行时和模型放在同一个目录，直接运行，不需要安装。完整的文件组织结构：
+
+```
+Gopaz/
+├─ gopaz.exe                        主程序
+├─ config.json                      首次运行自动生成（UI 状态与选项）
+├─ ffmpeg/                          视频解码编码
+│  ├─ ffmpeg.exe
+│  └─ ffprobe.exe
+├─ models/                          按模型分四个子目录，明文 .onnx
+│  ├─ proteus/
+│  │  ├─ prap-v3-fp32-ox.onnx       Auto 参数估计模型
+│  │  ├─ prob-v4-fgnet-fp16-256x352-1x-ox.onnx
+│  │  ├─ prob-v4-fgnet-fp16-288x288-1x-ox.onnx
+│  │  └─ ...
+│  ├─ gaia/
+│  ├─ apollo/
+│  └─ aion/
+├─ runtime/                         按供应商分目录
+│  ├─ NVIDIA/
+│  │  ├─ CUDA/                      ONNX Runtime + CUDA/TensorRT 插件（共用）
+│  │  │  ├─ onnxruntime.dll
+│  │  │  ├─ onnxruntime_providers_cuda.dll
+│  │  │  └─ ...
+│  │  ├─ TensorRT/                  TensorRT 官方运行库
+│  │  └─ Compute/                   CUDA 计算库 + cuDNN
+│  ├─ DirectML/                     ONNX Runtime + DirectML 后端
+│  └─ OpenVINO/                     ONNX Runtime + OpenVINO 后端
+└─ cache/                           自动生成，删除即清缓存
+```
 
 | 路径 | 内容 |
 |---|---|
-| `gopaz.exe` | 主程序 |
 | `config.json` | 首次运行自动生成的配置：UI 状态持久化和程序选项（见下） |
-| `ffmpeg/` | `ffmpeg.exe` 和 `ffprobe.exe`，视频解码和编码 |
-| `models/` | 按模型分子目录 `proteus/`、`gaia/`、`apollo/`、`aion/`；`.onnx` 或 `.tz` 模型，不需要 Topaz 的 JSON |
-| `runtime/OpenVINO/` | ONNX Runtime + OpenVINO 后端，含 `libs/` |
-| `runtime/DirectML/` | ONNX Runtime + DirectML 后端 |
-| `runtime/NVIDIA/CUDA/` | ONNX Runtime + CUDA/TensorRT 后端插件，CUDA、TensorRT、CPU 三个后端共用 |
-| `runtime/NVIDIA/TensorRT/` | TensorRT 运行库 `tensorrt_libs/` |
-| `runtime/NVIDIA/Compute/` | CUDA 计算库 + cuDNN（cublas、cudnn、nvrtc 等），CUDA 和 TensorRT 共用 |
 | `cache/` | 自动创建，TensorRT engine 和 OpenVINO 编译缓存；删除整个文件夹即可清缓存，下次运行重新构建；用 `GOPAZ_CACHE_DIR` 可改到其他位置 |
 
 查找顺序：
@@ -242,6 +278,10 @@ go test .
 GOPAZ_E2E=1 go test . -run E2E -v
 GOPAZ_E2E=1 GOPAZ_E2E_GPU=1 GOPAZ_E2E_AION=1 go test . -run TestE2EAionDuplicate -v
 ```
+
+## 许可证
+
+[MIT](LICENSE)
 
 ## 声明
 
