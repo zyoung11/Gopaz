@@ -41,6 +41,7 @@ type modelInfo struct {
 	Scales         []int       `json:"scales"`
 	Params         []paramInfo `json:"params"`
 	NPUUnsupported bool        `json:"npuUnsupported"`
+	SupportsAuto   bool        `json:"supportsAuto"`
 }
 
 type paramInfo struct {
@@ -241,7 +242,7 @@ func handleConfig(w http.ResponseWriter, r *http.Request) {
 		if m.Kind == KindInterp {
 			kind = "interp"
 		}
-		item := modelInfo{Key: m.Key, Display: m.Display, Kind: kind, Scales: m.Scales, NPUUnsupported: m.NPUUnsupported}
+		item := modelInfo{Key: m.Key, Display: m.Display, Kind: kind, Scales: m.Scales, NPUUnsupported: m.NPUUnsupported, SupportsAuto: m.AutoFile != ""}
 		for _, p := range m.Params {
 			item.Params = append(item.Params, paramInfo{Key: p.Key, GUIName: p.GUIName})
 		}

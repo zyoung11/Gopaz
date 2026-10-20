@@ -28,6 +28,8 @@ type UpscaleConfig struct {
 	Overlap int
 	// SceneThreshold is the scene change threshold; 0 uses the default 6.5.
 	SceneThreshold float64
+	// Auto enables per-frame parameter estimation with the prap model.
+	Auto bool
 	// GPU is -2 for auto, -1 for CPU, or a device index.
 	GPU     int
 	Threads int
@@ -52,6 +54,7 @@ type Runner struct {
 	outputs        []IOInfo
 	tileH, tileW   int
 	paramVec       []float64
+	autoSess       *Session
 	sceneThreshold float64
 	overlap        int
 	// prevHR is the previous frame output at output resolution.
@@ -303,6 +306,23 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if err != nil {
 		return nil, err
 	}
+	var autoSess *Session
+	if cfg.Auto && m.AutoFile != "" {
+		autoPath, aerr := modelPathNamed(cfg.ModelDir, m.Dir, m.AutoFile)
+		if aerr != nil {
+			return nil, fmt.Errorf("auto parameters: %w", aerr)
+		}
+		rawAuto, aerr := readModel(autoPath)
+		if aerr != nil {
+			return nil, fmt.Errorf("auto parameters: %w", aerr)
+		}
+		poolAuto, aerr := createSessions(env, rawAuto, DefaultSessionOptions(), 1)
+		if aerr != nil {
+			return nil, fmt.Errorf("auto parameters: %w", aerr)
+		}
+		autoSess = poolAuto[0]
+		Infof("Auto parameter model ready: %s", filepath.Base(autoPath))
+	}
 	botSO := so
 	if bottomPath != "" {
 		botSO.TRTCachePrefix = trtCachePrefix(bottomPath)
@@ -386,7 +406,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if sceneThreshold <= 0 {
 		sceneThreshold = DefaultSceneChangeThreshold
 	}
-	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), sceneThreshold: sceneThreshold, overlap: overlap, pool: pool, bottomPool: bpool, workers: nWorkers}
+	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), autoSess: autoSess, sceneThreshold: sceneThreshold, overlap: overlap, pool: pool, bottomPool: bpool, workers: nWorkers}
 	if len(bpool) > 0 {
 		r.bottomOutType = Float
 		if bo, err := bpool[0].Outputs(); err == nil && len(bo) > 0 {
@@ -666,6 +686,64 @@ func (r *Runner) paramTensor(v []float64) (*Tensor, error) {
 		return NewTensor(dims, Float16, ptrOfU16(h), len(h))
 	}
 	return NewTensor(dims, Float, ptrOf(f), len(f))
+}
+
+// autoParams updates the parameter vector with the prap model for a frame pair.
+func (r *Runner) autoParams(prev, curr *Frame) error {
+	if r.autoSess == nil {
+		return nil
+	}
+	w, h := prev.W, prev.H
+	step := 1
+	if s := max(w, h); s > 384 {
+		step = (s + 383) / 384
+	}
+	ow := (w + step - 1) / step
+	oh := (h + step - 1) / step
+	in := make([]float32, ow*oh*6)
+	k := 0
+	for y := range oh {
+		sy := min(y*step, h-1)
+		for x := range ow {
+			sx := min(x*step, w-1)
+			o := (sy*w + sx) * 3
+			in[k] = prev.Data[o]
+			in[k+1] = prev.Data[o+1]
+			in[k+2] = prev.Data[o+2]
+			in[k+3] = curr.Data[o]
+			in[k+4] = curr.Data[o+1]
+			in[k+5] = curr.Data[o+2]
+			k += 6
+		}
+	}
+	ins, err := r.autoSess.Inputs()
+	if err != nil {
+		return err
+	}
+	outs, err := r.autoSess.Outputs()
+	if err != nil {
+		return err
+	}
+	if len(ins) == 0 || len(outs) == 0 {
+		return fmt.Errorf("auto model has no inputs or outputs")
+	}
+	t, err := NewTensor([]int64{1, int64(oh), int64(ow), 6}, Float, ptrOf(in), len(in))
+	if err != nil {
+		return err
+	}
+	res, err := r.autoSess.Run([]string{ins[0].Name}, []*Tensor{t}, []string{outs[0].Name})
+	if err != nil {
+		return err
+	}
+	defer res[0].Destroy()
+	vals, err := tensorFloatsView(res[0], 6, outs[0].Type)
+	if err != nil {
+		return err
+	}
+	for i := 0; i < 6 && i < len(r.paramVec); i++ {
+		r.paramVec[i] = clampFloat(float64(vals[i]), -1, 1)
+	}
+	return nil
 }
 
 // scalarTensor builds a scalar tensor using the declared element type.

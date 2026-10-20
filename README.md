@@ -107,6 +107,10 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 
 `state` 保存使用过程中的全部选择：模型和参数、倍率/倍数、供应商和设备、编码器、容器、质量、码率控制、音频、线程/显存等高级参数、语言、输出目录和文件名。下次打开 Web 时自动恢复。
 
+### Proteus Auto
+
+Proteus 的参数面板提供 Auto 开关：开启后由 `models/proteus/prap-v3-fp32-ox.onnx`（参数估计模型）为每一帧自动输出 6 个参数（Antialias/DeBlur、Reduce Noise、Recover Details、Dehalo、Sharpen、Fix Compression），手动滑条被忽略；关闭则完全手动。CLI 用 `--auto 1`。
+
 ## 构建
 
 ```bash

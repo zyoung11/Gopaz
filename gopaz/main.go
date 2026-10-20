@@ -173,6 +173,7 @@ func cmdUpscale(args []string) error {
 	provider := fs.String("provider", "cuda", "inference provider")
 	device := fs.String("device", "", "provider device")
 	videoDevice := fs.String("video-device", "sw", "video decode acceleration sw, cuda or qsv")
+	auto := fs.Bool("auto", false, "let the AI model pick Proteus parameters per frame")
 	threads := fs.Int("threads", 0, "inference thread count")
 	workers := fs.Int("workers", 0, "parallel workers, 0 = auto")
 	vram := fs.Float64("vram", 0, "per-session VRAM limit in GB, 0 = auto")
@@ -228,6 +229,7 @@ func cmdUpscale(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
 		Params: params, GPU: *gpu, Threads: *threads, Workers: *workers, VramGB: *vram, Overlap: *overlap,
+		Auto:   *auto,
 		Provider: Provider(*provider), Device: *device, VideoDevice: *videoDevice,
 		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
 		StartFrame: *start, EndFrame: *end,

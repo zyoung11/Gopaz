@@ -38,6 +38,7 @@ type AppState struct {
 	DeviceVRAMGB   float64            `json:"gpuVram"`
 	Overlap        int                `json:"overlap"`
 	KColor         int                `json:"kcolor"`
+	Auto           bool               `json:"auto"`
 	SceneThreshold float64            `json:"sceneThreshold"`
 	StartFrame     int                `json:"startFrame"`
 	EndFrame       int                `json:"endFrame"`

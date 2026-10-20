@@ -62,6 +62,8 @@ type Model struct {
 	FileHasScale bool
 	// SingleFile is the fixed file name for dynamic-size models such as Aion.
 	SingleFile string
+	// AutoFile is the optional parameter estimation model file name.
+	AutoFile string
 	// Temporal is the number of temporal input frames (Proteus=2, Gaia=5).
 	Temporal int
 	// CenterIdx is the index of the current frame inside the temporal window.
@@ -104,6 +106,7 @@ func ModelRegistry() map[string]*Model {
 			Key: "proteus", Dir: "proteus", Short: "prob", Version: "4", Kind: KindEnhance,
 			Display: "Proteus", Scales: []int{1, 2, 4}, TileHW: enhanceTiles,
 			Params: proteusParams(), FilePrefix: "prob-v4-fgnet", FileHasScale: true,
+			AutoFile: "prap-v3-fp32-ox.onnx",
 			Temporal: 2, CenterIdx: 1, KeepColor: true,
 		},
 		"gaia": {

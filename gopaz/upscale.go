@@ -16,6 +16,7 @@ type UpscaleJob struct {
 	Model           *Model
 	Scale           int
 	Params          map[string]float64
+	Auto            bool
 	GPU             int
 	Threads         int
 	Workers         int
@@ -40,6 +41,7 @@ func (job UpscaleJob) runnerConfig(fw, fh int) UpscaleConfig {
 		Model: job.Model, ModelDir: job.ModelDir, Scale: job.Scale,
 		FW: fw, FH: fh, Params: job.Params, Overlap: job.Overlap,
 		SceneThreshold: job.SceneThreshold,
+		Auto:           job.Auto,
 		GPU:            job.GPU, Threads: job.Threads, Workers: job.Workers, VramGB: job.VramGB,
 		Provider: job.Provider, Device: job.Device,
 	}
@@ -215,6 +217,11 @@ func RunUpscale(job UpscaleJob) error {
 			window[j] = frameAt(emitPos - center + j)
 		}
 		centerFrame := frameAt(emitPos)
+		if r.autoSess != nil && center > 0 && center < len(window) {
+			if aerr := r.autoParams(window[center-1], window[center]); aerr != nil {
+				Warnf("auto parameters failed: %v", aerr)
+			}
+		}
 		if needTemporal && r.prevHR == nil {
 			r.ResetTemporal(centerFrame.UpscaleBilinear(outW, outH))
 		}

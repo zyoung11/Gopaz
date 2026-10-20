@@ -43,6 +43,7 @@ type jobRequest struct {
 	Provider       string             `json:"provider"`
 	Device         string             `json:"device"`
 	VideoDevice    string             `json:"videoDevice"`
+	Auto           bool               `json:"auto"`
 	Threads        int                `json:"threads"`
 	Workers        int                `json:"workers"`
 	VramGB         float64            `json:"vram"`
@@ -467,6 +468,7 @@ func buildJobArgs(req *jobRequest, plan *jobPlan) []string {
 	if plan.Mode == "enhance" {
 		args = append(args, "--scale", itoa(req.Scale))
 		args = append(args, "--kcolor", boolInt(req.KColor))
+		args = append(args, "--auto", boolInt(req.Auto))
 		args = append(args, "--scene-threshold", ftoa(req.SceneThreshold))
 		for _, p := range plan.Model.Params {
 			args = append(args, "--"+p.Key, ftoa(req.Params[p.Key]))

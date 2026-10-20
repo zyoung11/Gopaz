@@ -80,6 +80,18 @@ func TestModelAvailable(t *testing.T) {
 	}
 }
 
+// TestModelAutoFile checks the parameter estimation model wiring.
+func TestModelAutoFile(t *testing.T) {
+	if ModelRegistry()["proteus"].AutoFile == "" {
+		t.Fatal("proteus should declare an auto parameter model")
+	}
+	for _, key := range []string{"gaia", "gaia-cg", "apollo", "aion"} {
+		if ModelRegistry()[key].AutoFile != "" {
+			t.Fatalf("%s should not declare an auto parameter model", key)
+		}
+	}
+}
+
 // TestProteusParamRanges checks that every Proteus parameter allows negative values.
 func TestProteusParamRanges(t *testing.T) {
 	for _, p := range ModelRegistry()["proteus"].Params {

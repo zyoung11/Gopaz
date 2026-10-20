@@ -235,6 +235,8 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.04em;
 }
 
+
+
 .cmp-label {
   position: absolute;
   top: 10px;

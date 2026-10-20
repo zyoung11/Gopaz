@@ -94,6 +94,9 @@ const I18N = {
     "task.interpolating": "Interpolating",
     "task.inProgress": "In progress",
     "task.elapsed": "Elapsed",
+    "settings.autoParams": "Auto",
+    "settings.manual": "Manual",
+    "tooltip.params.auto": "Let the AI model pick the best Proteus parameters for every frame. Manual sliders are ignored while this is on.",
     "task.live": "Live",
     "compile.title": "Precompiling",
     "compile.tip": "Building the compute engine for this model and shape. The first time takes a few minutes. The result is cached in the cache folder and the same model and shape never compiles again. Changing model, resolution, scale or provider may trigger a new build. Deleting the cache folder frees space and only costs one rebuild.",
@@ -226,6 +229,9 @@ const I18N = {
     "task.interpolating": "插帧中",
     "task.inProgress": "进行中",
     "task.elapsed": "用时",
+    "settings.autoParams": "自动",
+    "settings.manual": "手动",
+    "tooltip.params.auto": "AI 模型为每一帧自动寻找最佳的 Proteus 参数；开启后忽略下方手动滑条。",
     "task.live": "实时",
     "compile.title": "预编译中",
     "compile.tip": "正在为当前模型和尺寸构建计算引擎，首次需要几分钟。构建结果缓存在 cache 文件夹，相同模型和尺寸再次运行无需重新编译；更换模型、分辨率、倍率或后端可能触发重新编译。删除 cache 文件夹可以释放空间，代价只是下次重新构建一次。",
@@ -309,6 +315,7 @@ const state = {
     factor: 2,
     sensitivity: 10,
     logHeight: 0,
+    autoParams: false,
     params: {},
   },
   busy: false,
@@ -625,7 +632,34 @@ function renderModelSettings() {
     );
     host.append(group);
 
-    if (model.params.length > 0) {
+    if (model.supportsAuto) {
+      const autoGroup = document.createElement("div");
+      autoGroup.className = "control-group";
+      autoGroup.dataset.tooltipKey = "tooltip.params.auto";
+      autoGroup.dataset.tooltipTitle = t("settings.autoParams");
+      const autoLabel = document.createElement("div");
+      autoLabel.className = "control-label";
+      autoLabel.textContent = t("settings.autoParams");
+      autoGroup.append(autoLabel);
+      autoGroup.append(
+        segmented(
+          [
+            { value: "manual", label: t("settings.manual") },
+            { value: "auto", label: t("settings.autoParams") },
+          ],
+          state.settings.autoParams ? "auto" : "manual",
+          (v) => {
+            state.settings.autoParams = v === "auto";
+            renderModelSettings();
+            renderCliHint();
+            syncSettingsSoon();
+          }
+        )
+      );
+      host.append(autoGroup);
+    }
+
+    if (model.params.length > 0 && !(model.supportsAuto && state.settings.autoParams)) {
       const params = document.createElement("div");
       params.className = "control-group";
       const plabel = document.createElement("div");
@@ -989,6 +1023,7 @@ function buildRequest() {
     gpuVram: numberFrom("#gpuVramInput"),
     overlap: numberFrom("#overlapInput"),
     kcolor: $("#kcolorSelect").value === "1",
+    auto: !!state.settings.autoParams,
     sceneThreshold: numberFrom("#sceneInput", 6.5),
     startFrame: numberFrom("#startInput", -1),
     endFrame: numberFrom("#endInput", -1),
@@ -1028,6 +1063,7 @@ function buildSettings() {
     gpuVram: req.gpuVram,
     overlap: req.overlap,
     kcolor: req.kcolor ? 1 : 0,
+    auto: !!state.settings.autoParams,
     sceneThreshold: req.sceneThreshold,
     startFrame: req.startFrame,
     endFrame: req.endFrame,
@@ -1074,6 +1110,7 @@ function applySettings(app) {
   if (s.scale) state.settings.scale = s.scale;
   if (s.factor) state.settings.factor = s.factor;
   if (s.sensitivity !== undefined) state.settings.sensitivity = s.sensitivity;
+  state.settings.autoParams = !!s.auto;
   if (s.params) state.settings.params = s.params;
   $("#bitrateInput").value = s.bitrate ?? 20;
   $("#audioBitrateInput").value = s.audioBitrate ?? 320;
