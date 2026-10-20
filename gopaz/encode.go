@@ -11,6 +11,8 @@ type EncoderSpec struct {
 	Desc string
 	// Family selects the rate control dialect: nvenc, qsv or empty for the rest.
 	Family string
+	// MaxDim is the largest supported width or height in pixels; zero means unlimited.
+	MaxDim int
 	// Base holds the base video encoding arguments.
 	Base []string
 	// Extensions lists the container extensions this encoder accepts.
@@ -28,6 +30,7 @@ func EncoderRegistry() map[string]*EncoderSpec {
 	return map[string]*EncoderSpec{
 		"h264-main-win-nvidia": {
 			ID: "h264-main-win-nvidia", Desc: "H.264 High, NVENC, 8bit",
+			MaxDim:     4096,
 			Base:       strings.Fields("-c:v h264_nvenc -profile:v high -pix_fmt yuv420p -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 18, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
@@ -40,6 +43,7 @@ func EncoderRegistry() map[string]*EncoderSpec {
 		"h264-main-win-qsv": {
 			ID: "h264-main-win-qsv", Desc: "H.264 High, Quick Sync, 8bit",
 			Family:     "qsv",
+			MaxDim:     4096,
 			Base:       strings.Fields("-c:v h264_qsv -profile:v high -pix_fmt yuv420p -g 30 -preset medium"),
 			Extensions: []string{"mov", "mkv", "mp4"},
 			CQP:        map[string]int{"High": 18, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
@@ -104,6 +108,26 @@ func EncoderRegistry() map[string]*EncoderSpec {
 			Extensions: []string{"mp4", "mkv", "webm"}, RateControl: true,
 		},
 	}
+}
+
+// encoderHint adds troubleshooting context to encoder failures reported by ffmpeg.
+func encoderHint(stderr string) string {
+	if strings.Contains(stderr, "No capable devices") {
+		return "; the GPU encoder is unavailable, busy or the output exceeds its size limit, use an H.265 or software encoder"
+	}
+	return ""
+}
+
+// ValidateEncoderSize reports whether the encoder supports the output dimensions.
+func ValidateEncoderSize(id string, w, h int) error {
+	e, err := GetEncoder(id)
+	if err != nil {
+		return err
+	}
+	if e.MaxDim > 0 && (w > e.MaxDim || h > e.MaxDim) {
+		return fmt.Errorf("%s does not support %dx%d, pick an H.265 or software encoder", e.Desc, w, h)
+	}
+	return nil
 }
 
 // GetEncoder returns the encoder with the given ID.

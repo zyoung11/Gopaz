@@ -152,10 +152,8 @@ var (
 	jobs      = map[string]*job{}
 	activeJob *job
 
-	previewEncOnce sync.Once
-	previewEncID   string
-	previewMu      sync.Mutex
-	previewDir     string
+	previewMu  sync.Mutex
+	previewDir string
 )
 
 func resolveOutput(req *jobRequest) (*jobPlan, error) {
@@ -338,7 +336,11 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 	req.EndFrame = end
 	req.OutputDir = dir
 	req.OutputName = "preview"
-	req.Encoder = choosePreviewEncoder(localTool("ffmpeg"))
+	outW, outH := info.Width, info.Height
+	if req.Scale > 1 {
+		outW, outH = outW*req.Scale, outH*req.Scale
+	}
+	req.Encoder = choosePreviewEncoder(localTool("ffmpeg"), outW, outH)
 	req.Container = "mp4"
 	req.Quality = "High"
 	req.RateControl = "cq"
@@ -386,16 +388,16 @@ func probeEncoder(ffmpeg, name string) bool {
 	return cmd.Run() == nil
 }
 
-// choosePreviewEncoder picks NVENC when a probe encode succeeds and falls back
-// to libx264 otherwise.
-func choosePreviewEncoder(ffmpeg string) string {
-	previewEncOnce.Do(func() {
-		previewEncID = "h264-main-sw"
-		if probeEncoder(ffmpeg, "h264_nvenc") {
-			previewEncID = "h264-main-win-nvidia"
-		}
-	})
-	return previewEncID
+// choosePreviewEncoder picks a fast encoder for previews that fits the output
+// size, re-probing every call so a busy GPU encoder falls back to software.
+func choosePreviewEncoder(ffmpeg string, w, h int) string {
+	if w <= 4096 && h <= 4096 && probeEncoder(ffmpeg, "h264_nvenc") {
+		return "h264-main-win-nvidia"
+	}
+	if probeEncoder(ffmpeg, "hevc_nvenc") {
+		return "h265-main-win-nvidia"
+	}
+	return "h264-main-sw"
 }
 
 // trackPreviewDir remembers the current preview folder and removes the previous

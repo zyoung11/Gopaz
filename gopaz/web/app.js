@@ -1222,6 +1222,10 @@ function resetTaskLabels() {
   const fill = $("#progressFill");
   track.classList.remove("indeterminate");
   track.classList.remove("done");
+  barPct = 0;
+  barRate = 0;
+  barReal = 0;
+  barLast = 0;
   fill.style.transition = "none";
   fill.style.width = "0%";
   void fill.offsetWidth;
@@ -1301,6 +1305,23 @@ function startPolling(id) {
 }
 
 let compileTimer = 0;
+let barPct = 0;
+let barRate = 0;
+let barReal = 0;
+let barLast = 0;
+
+function tickProgress() {
+  if (!state.job || state.job.state !== "running") return;
+  const now = performance.now();
+  const dt = barLast ? Math.min(0.25, (now - barLast) / 1000) : 0;
+  barLast = now;
+  if (dt > 0) {
+    barPct += barRate * dt;
+    if (barPct < barReal) barPct += (barReal - barPct) * 0.05;
+    if (barPct > 99) barPct = 99;
+    $("#progressFill").style.width = `${barPct}%`;
+  }
+}
 
 function updateCompileOverlay(compiling) {
   const overlay = $("#compileOverlay");
@@ -1344,12 +1365,19 @@ function renderJob(job) {
   } else {
     track.classList.remove("indeterminate");
     const pct = total > 0 ? Math.min(100, (p.cur / total) * 100) : p.pct >= 0 ? p.pct : 0;
-    $("#progressFill").style.width = `${pct}%`;
+    barReal = pct;
+    if (running) {
+      const sp = p.speed || 0;
+      barRate = total > 0 && sp > 0 ? (sp / total) * 100 : job.elapsed > 0 ? pct / job.elapsed : 0;
+    } else {
+      barRate = 0;
+    }
     const count = total > 0 ? ` ${p.cur}/${total}` : "";
     $("#progressLabel").textContent = compileShown ? t("compile.title") : `${prefix}${label}${count}`;
   }
   track.classList.toggle("done", job.state === "done");
   if (job.state === "done") {
+    barPct = 100;
     $("#progressFill").style.width = "100%";
     $("#progressLabel").textContent = `${prefix}${t("task.done")}`;
   } else if (job.state === "cancelled") {
@@ -1991,6 +2019,7 @@ function setDivider(pct) {
 }
 
 function playerTick() {
+  tickProgress();
   if (state.input) {
     if (state.playerMode === "original") {
       if (!state.seeking) {

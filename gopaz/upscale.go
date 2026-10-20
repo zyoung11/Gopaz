@@ -120,6 +120,9 @@ func RunUpscale(job UpscaleJob) error {
 	}
 
 	outW, outH := fw*job.Scale, fh*job.Scale
+	if err := ValidateEncoderSize(job.Encode.EncoderID, outW, outH); err != nil {
+		return err
+	}
 	encArgs, err := BuildArgs(job.Encode)
 	if err != nil {
 		return err
@@ -251,7 +254,7 @@ func RunUpscale(job UpscaleJob) error {
 	if err := writer.Close(); err != nil {
 		enc.Close()
 		if se := enc.Stderr(); se != "" {
-			return fmt.Errorf("failed to write encoder: %w; ffmpeg: %s", err, se)
+			return fmt.Errorf("failed to write encoder: %w; ffmpeg: %s%s", err, se, encoderHint(se))
 		}
 		return err
 	}

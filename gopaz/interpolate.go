@@ -138,6 +138,9 @@ func RunInterpolate(job InterpJob) error {
 	defer reader.Stop()
 
 	outFPS := info.FPS
+	if err := ValidateEncoderSize(job.Encode.EncoderID, fw, fh); err != nil {
+		return err
+	}
 	encArgs, err := BuildArgs(job.Encode)
 	if err != nil {
 		return err
@@ -264,7 +267,7 @@ func RunInterpolate(job InterpJob) error {
 	if err := writer.Close(); err != nil {
 		enc.Close()
 		if se := enc.Stderr(); se != "" {
-			return fmt.Errorf("failed to write encoder: %w; ffmpeg: %s", err, se)
+			return fmt.Errorf("failed to write encoder: %w; ffmpeg: %s%s", err, se, encoderHint(se))
 		}
 		return err
 	}
