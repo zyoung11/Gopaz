@@ -1,3 +1,19 @@
+# mkicon
+
+Renders the Gopaz brand mark into `gopaz/gopaz.ico` (16 to 256 px,
+PNG-compressed frames). Used together with
+[rsrc](https://github.com/akavel/rsrc) to embed the icon into the executable:
+
+```bash
+cd gopaz
+go run ./tools/mkicon -o gopaz.ico
+rsrc -ico gopaz.ico -arch amd64 -o rsrc_windows_amd64.syso
+```
+
+The generated `gopaz.ico` and `rsrc_windows_amd64.syso` are checked in;
+`go build` links the icon automatically. Re-run both commands only after
+changing the brand mark.
+
 # genoffsets
 
 Regenerates `gopaz/offsets.go` from `onnxruntime_c_api.h`.

@@ -103,6 +103,9 @@ const I18N = {
     "task.eta": "ETA",
     "task.fpsUnit": "fps",
     "task.cancel": "Cancel",
+    "confirm.stopTitle": "Stop the task?",
+    "confirm.stopText": "Progress so far will be discarded.",
+    "confirm.stop": "Stop",
     "task.reveal": "Open output location",
     "toast.configLoading": "Configuration is still loading",
     "toast.selectPath": "Enter a video path",
@@ -231,6 +234,9 @@ const I18N = {
     "task.eta": "剩余",
     "task.fpsUnit": "帧/秒",
     "task.cancel": "取消",
+    "confirm.stopTitle": "停止当前任务？",
+    "confirm.stopText": "已完成的进度将被丢弃。",
+    "confirm.stop": "停止",
     "task.reveal": "打开输出位置",
     "toast.configLoading": "配置尚未加载完成",
     "toast.selectPath": "请输入视频路径",
@@ -528,9 +534,6 @@ async function loadConfig() {
   resetTaskLabels();
   setStatusKey("status.ready");
   renderCliHint();
-  if (cfg.app && cfg.app.restoreVideo && cfg.app.state && cfg.app.state.input) {
-    loadInput(cfg.app.state.input);
-  }
 }
 
 function renderFilters() {
@@ -1271,18 +1274,20 @@ function startPolling(id) {
   clearTimeout(state.pollTimer);
   const poll = async () => {
     if (!state.job || state.job.id !== id) return;
+    let job = null;
     try {
-      const job = await fetchJSON(`/api/jobs/${id}`);
-      state.job = job;
-      renderJob(job);
-      if (job.state === "running") {
-        state.pollTimer = setTimeout(poll, 500);
-        return;
-      }
-      finishJobUI(job);
+      job = await fetchJSON(`/api/jobs/${id}`);
     } catch {
       state.pollTimer = setTimeout(poll, 1000);
+      return;
     }
+    state.job = job;
+    renderJob(job);
+    if (job.state === "running") {
+      state.pollTimer = setTimeout(poll, 500);
+      return;
+    }
+    finishJobUI(job);
   };
   state.pollTimer = setTimeout(poll, 300);
 }
@@ -1376,8 +1381,7 @@ function resetJobView() {
   clearTimeout(state.pollTimer);
   clearTimeout(state.previewTimer);
   $("#logPanel").innerHTML = "";
-  $("#logWrap").hidden = true;
-  $("#logButton").textContent = t("log.show");
+  $("#logButton").textContent = $("#logWrap").hidden ? t("log.show") : t("log.hide");
   $("#cancelButton").hidden = true;
   $("#revealButton").hidden = true;
   resetTaskLabels();
@@ -1395,20 +1399,16 @@ function finishJobUI(job) {
       loadPreview(job);
       $("#progressFill").style.width = "100%";
       $("#progressLabel").textContent = `${t("task.preview")} · ${t("task.done")}`;
-      $("#progressValue").textContent = "100%";
-      $("#taskEta").textContent = `${t("task.eta")} —`;
       setStatusKey("status.done");
       toast(t("toast.previewReady"));
       return;
     }
     if (job.state === "cancelled") {
       $("#progressLabel").textContent = `${t("task.preview")} · ${t("task.cancelled")}`;
-      $("#taskEta").textContent = `${t("task.eta")} —`;
       setStatusKey("status.ready");
       return;
     }
     $("#progressLabel").textContent = `${t("task.preview")} · ${t("task.failed")}`;
-    $("#taskEta").textContent = `${t("task.eta")} —`;
     setStatusKey("status.failed");
     toast(job.error || t("task.failed"), true);
     return;
@@ -1419,8 +1419,6 @@ function finishJobUI(job) {
   if (job.state === "done") {
     $("#progressFill").style.width = "100%";
     $("#progressLabel").textContent = t("task.done");
-    $("#progressValue").textContent = "100%";
-    $("#taskEta").textContent = `${t("task.eta")} —`;
     if (job.output) {
       const name = basename(job.output);
       state.outputPath = job.output;
@@ -1443,18 +1441,18 @@ function finishJobUI(job) {
   }
   if (job.state === "cancelled") {
     $("#progressLabel").textContent = t("task.cancelled");
-    $("#taskEta").textContent = `${t("task.eta")} —`;
     setStatusKey("status.ready");
     return;
   }
   $("#progressLabel").textContent = t("task.failed");
-  $("#taskEta").textContent = `${t("task.eta")} —`;
   setStatusKey("status.failed");
   toast(job.error || t("task.failed"), true);
 }
 
 async function cancelJob() {
   if (!state.job || state.job.state !== "running") return;
+  const ok = await confirmDialog(t("confirm.stopTitle"), t("confirm.stopText"), t("confirm.stop"));
+  if (!ok) return;
   $("#cancelButton").disabled = true;
   try {
     await postJSON(`/api/jobs/${state.job.id}/cancel`, {});
@@ -1462,6 +1460,35 @@ async function cancelJob() {
     $("#cancelButton").disabled = false;
     toast(err.message, true);
   }
+}
+
+function confirmDialog(title, text, okLabel) {
+  return new Promise((resolve) => {
+    const modal = $("#confirmModal");
+    $("#confirmTitle").textContent = title;
+    $("#confirmText").textContent = text || "";
+    $("#confirmText").hidden = !text;
+    $("#confirmOk").textContent = okLabel || "OK";
+    modal.hidden = false;
+    $("#confirmCancel").focus();
+    const done = (ok) => {
+      modal.hidden = true;
+      document.removeEventListener("keydown", onKey, true);
+      resolve(ok);
+    };
+    const onKey = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        done(false);
+      }
+    };
+    $("#confirmOk").onclick = () => done(true);
+    $("#confirmCancel").onclick = () => done(false);
+    modal.onclick = (e) => {
+      if (e.target === modal) done(false);
+    };
+    document.addEventListener("keydown", onKey, true);
+  });
 }
 
 async function revealOutput() {
@@ -1694,17 +1721,24 @@ function bindEvents() {
 
 async function init() {
   requestAnimationFrame(playerTick);
-  applyI18n();
   bindEvents();
   bindLogResize();
   updateStartState();
+  let ok = true;
   try {
     await loadConfig();
+    const app = state.config && state.config.app;
+    if (app && app.restoreVideo && app.state && app.state.input && !state.input) {
+      await loadInput(app.state.input);
+    }
   } catch (err) {
+    ok = false;
     toast(err.message, true);
     setStatusKey("status.connecting");
-    return;
   }
+  document.body.classList.remove("booting");
+  $("#boot").hidden = true;
+  if (!ok) return;
   if (state.outputDir) $("#outputDirInput").value = state.outputDir;
   setStatusKey("status.ready");
   resetTaskLabels();
