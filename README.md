@@ -40,6 +40,7 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 | 路径 | 内容 |
 |---|---|
 | `gopaz.exe` | 主程序 |
+| `config.json` | 首次运行自动生成的配置：UI 状态持久化和程序选项（见下） |
 | `ffmpeg/` | `ffmpeg.exe` 和 `ffprobe.exe`，视频解码和编码 |
 | `models/` | 按模型分子目录 `proteus/`、`gaia/`、`apollo/`、`aion/`；`.onnx` 或 `.tz` 模型，不需要 Topaz 的 JSON |
 | `runtime/OpenVINO/` | ONNX Runtime + OpenVINO 后端，含 `libs/` |
@@ -70,6 +71,27 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 | CPU | 任意一份 ONNX Runtime | — |
 
 只放 `runtime/NVIDIA/CUDA` 不足以跑 CUDA：ORT 只是调度层，真正做计算的 cuBLAS/cuDNN 必须由 `NVIDIA/Compute` 文件夹或系统安装提供，二选一。
+
+## 配置文件
+
+`config.json` 在首次运行时自动生成在 `gopaz.exe` 同目录，包含程序选项和 UI 状态两部分：
+
+```json
+{
+  "saveState": true,
+  "restoreVideo": true,
+  "port": 8765,
+  "state": { "lang": "zh", "model": "proteus", "...": "上次的全部选择" }
+}
+```
+
+| 选项 | 默认 | 说明 |
+|---|---|---|
+| `saveState` | `true` | 是否把 UI 状态持续写回本文件，关闭后 state 不再更新 |
+| `restoreVideo` | `true` | 启动时自动加载上次选择的视频，置为 `false` 关闭 |
+| `port` | `8765` | Web 端口，`--port` 参数优先于本项 |
+
+`state` 保存使用过程中的全部选择：模型和参数、倍率/倍数、供应商和设备、编码器、容器、质量、码率控制、音频、线程/显存等高级参数、语言、输出目录和文件名。下次打开 Web 时自动恢复。
 
 ## 构建
 

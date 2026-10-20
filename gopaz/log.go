@@ -67,6 +67,14 @@ func Debugf(format string, a ...any) {
 	}
 }
 
+// Phase reports the current pipeline phase as a JSON progress event.
+func Phase(name string) {
+	if jsonEvents {
+		b, _ := json.Marshal(map[string]any{"type": "phase", "phase": name})
+		fmt.Println(string(b))
+	}
+}
+
 // Progress reports pipeline progress. In JSON mode it emits one event per call.
 func Progress(label string, cur, total int) {
 	if jsonEvents {

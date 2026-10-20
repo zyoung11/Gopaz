@@ -92,6 +92,7 @@ type jobProgress struct {
 	Pct   float64 `json:"pct"`
 	Speed float64 `json:"speed"`
 	ETA   float64 `json:"eta"`
+	Phase string  `json:"phase,omitempty"`
 }
 
 type job struct {
@@ -142,6 +143,7 @@ type childEvent struct {
 	Cur   int     `json:"cur"`
 	Total int     `json:"total"`
 	Pct   float64 `json:"pct"`
+	Phase string  `json:"phase"`
 }
 
 var (
@@ -669,6 +671,8 @@ func scanEvents(r io.Reader, j *job, fallbackLevel string) {
 			j.addLog(level, ev.Msg)
 		case "progress":
 			j.setProgress(ev.Label, ev.Cur, ev.Total, ev.Pct)
+		case "phase":
+			j.setPhase(ev.Phase)
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -761,6 +765,13 @@ func (j *job) addLog(level, msg string) {
 	if level == "error" && msg != "" {
 		j.Error = msg
 	}
+}
+
+// setPhase records the current pipeline phase for progress display.
+func (j *job) setPhase(phase string) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.Progress.Phase = phase
 }
 
 func (j *job) setProgress(label string, cur, total int, pct float64) {

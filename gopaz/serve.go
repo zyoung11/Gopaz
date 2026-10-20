@@ -75,6 +75,8 @@ type configResponse struct {
 	Encoders  []encoderInfo  `json:"encoders"`
 	Providers []providerInfo `json:"providers"`
 	GPUs      []deviceInfo   `json:"gpus"`
+	Version   string         `json:"version"`
+	App       AppConfig      `json:"app"`
 	Defaults  defaultsInfo   `json:"defaults"`
 }
 
@@ -110,11 +112,18 @@ type outputPreview struct {
 
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
-	port := fs.Int("port", 8765, "listen port")
+	port := fs.Int("port", 0, "listen port, defaults to port from config.json")
 	noOpen := fs.Bool("no-open", false, "do not open the browser")
 	fs.Parse(args)
 
-	ln, err := listenLocal(*port)
+	listenPort := *port
+	if listenPort == 0 {
+		listenPort = loadAppConfig().Port
+	}
+	if listenPort <= 0 {
+		listenPort = 8765
+	}
+	ln, err := listenLocal(listenPort)
 	if err != nil {
 		return err
 	}
@@ -174,6 +183,7 @@ func openBrowser(url string) error {
 func newMux() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/config", handleConfig)
+	mux.HandleFunc("/api/settings", handleSettings)
 	mux.HandleFunc("/api/probe", handleProbe)
 	mux.HandleFunc("/api/pick/file", handlePickFile)
 	mux.HandleFunc("/api/pick/folder", handlePickFolder)
@@ -199,12 +209,28 @@ func webHandler() http.Handler {
 	})
 }
 
+func handleSettings(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var st AppState
+	if err := decodeJSON(r, &st); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request")
+		return
+	}
+	saveAppState(st)
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
 func handleConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	var out configResponse
+	out.Version = version
+	out.App = loadAppConfig()
 	modelDir := resolveModelDir()
 	for _, key := range ModelKeys() {
 		m := ModelRegistry()[key]

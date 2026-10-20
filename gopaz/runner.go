@@ -284,6 +284,10 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if m.Key == "aion" && provider == ProviderOpenVINO {
 		so.FreeDims = aionFreeDims(tw, th, true)
 	}
+	if provider == ProviderTensorRT || provider == ProviderOpenVINO {
+		Phase("compile")
+		defer Phase("")
+	}
 	sessionStart := time.Now()
 	if provider == ProviderOpenVINO {
 		if strings.EqualFold(device, "NPU") {

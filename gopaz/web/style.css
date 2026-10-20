@@ -228,6 +228,42 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.12em;
 }
 
+.brand-version {
+  margin-left: -4px;
+  color: var(--text-3);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.compile-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgba(23, 23, 23, 0.78);
+  color: var(--text-2);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: help;
+  z-index: 6;
+}
+
+.compile-overlay .icon {
+  width: 34px;
+  height: 34px;
+  stroke: var(--accent);
+  animation: spanner-spin 3.6s linear infinite;
+}
+
+@keyframes spanner-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .topbar-center {
   color: var(--text-3);
   font-size: 11px;
@@ -1043,13 +1079,28 @@ input[type="range"]::-moz-range-thumb {
   gap: 6px;
 }
 
+.log-wrap {
+  margin-top: 8px;
+}
+
+.log-resize {
+  height: 7px;
+  cursor: row-resize;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--border);
+}
+
+.log-resize:hover {
+  background: var(--border-strong);
+}
+
 .log-panel {
-  max-height: min(320px, 38vh);
-  margin: 8px 0 0;
+  height: 160px;
+  margin: 0;
   padding: 8px 10px;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 0 0 var(--radius) var(--radius);
   background: var(--panel-2);
   color: var(--text-2);
   font: 10px/1.55 var(--mono);

@@ -93,6 +93,9 @@ const I18N = {
     "task.enhancing": "Enhancing",
     "task.interpolating": "Interpolating",
     "task.inProgress": "In progress",
+    "task.elapsed": "Elapsed",
+    "compile.title": "Precompiling",
+    "compile.tip": "Building the compute engine for this model and shape. The first time takes a few minutes. The result is cached in the cache folder and the same model and shape never compiles again. Changing model, resolution, scale or provider may trigger a new build. Deleting the cache folder frees space and only costs one rebuild.",
     "models.none": "No model files found in the models folder",
     "task.done": "Done",
     "task.cancelled": "Cancelled",
@@ -218,6 +221,9 @@ const I18N = {
     "task.enhancing": "增强中",
     "task.interpolating": "插帧中",
     "task.inProgress": "进行中",
+    "task.elapsed": "已用",
+    "compile.title": "预编译中",
+    "compile.tip": "正在为当前模型和尺寸构建计算引擎，首次需要几分钟。构建结果缓存在 cache 文件夹，相同模型和尺寸再次运行无需重新编译；更换模型、分辨率、倍率或后端可能触发重新编译。删除 cache 文件夹可以释放空间，代价只是下次重新构建一次。",
     "models.none": "models 文件夹中未找到模型文件",
     "task.done": "完成",
     "task.cancelled": "已取消",
@@ -254,7 +260,7 @@ const I18N = {
   },
 };
 
-let lang = localStorage.getItem("gopaz.lang") || "en";
+let lang = "en";
 if (lang !== "en" && lang !== "zh") lang = "en";
 
 function t(key) {
@@ -283,7 +289,7 @@ const state = {
   quality: "High",
   rateControl: "cq",
   audioCodec: "copy",
-  outputDir: localStorage.getItem("gopaz.outputDir") || "",
+  outputDir: "",
   outputPath: "",
   outputName: "",
   outputError: "",
@@ -293,6 +299,7 @@ const state = {
     scale: 2,
     factor: 2,
     sensitivity: 10,
+    logHeight: 0,
     params: {},
   },
   busy: false,
@@ -359,7 +366,7 @@ function applyI18n() {
   });
   $("#languageButton").textContent = lang === "zh" ? "EN" : "中文";
   $("#languageButton").title = t("lang.toggle");
-  $("#logButton").textContent = $("#logPanel").hidden ? t("log.show") : t("log.hide");
+  $("#logButton").textContent = $("#logWrap").hidden ? t("log.show") : t("log.hide");
   $("#startButton").textContent = state.busy ? t("task.processing") : t("task.start");
   updateOutputLabel();
   renderOutputHint();
@@ -503,19 +510,27 @@ async function loadConfig() {
   state.rateControl = defaults.rateControl || "cq";
   state.audioCodec = defaults.audioCodec || "copy";
   if (defaults.audioBitrate) $("#audioBitrateInput").value = defaults.audioBitrate;
+  applySettings(cfg.app);
 
   renderFilters();
   populateEncoders();
   populateProviders();
   updateGpuOptions();
+  $("#brandVersion").textContent = cfg.version || "";
   if (cfg.models.length > 0) {
-    selectModel(cfg.models.some((m) => m.key === "proteus") ? "proteus" : cfg.models[0].key);
+    const saved = cfg.app && cfg.app.state && cfg.app.state.model;
+    const key = cfg.models.some((m) => m.key === saved) ? saved : cfg.models.some((m) => m.key === "proteus") ? "proteus" : cfg.models[0].key;
+    selectModel(key);
   } else {
     toast(t("models.none"), true);
   }
+  applyI18n();
   resetTaskLabels();
   setStatusKey("status.ready");
   renderCliHint();
+  if (cfg.app && cfg.app.restoreVideo && cfg.app.state && cfg.app.state.input) {
+    loadInput(cfg.app.state.input);
+  }
 }
 
 function renderFilters() {
@@ -979,6 +994,100 @@ function buildRequest() {
   };
 }
 
+function buildSettings() {
+  const req = buildRequest();
+  return {
+    lang,
+    input: state.input ? state.input.path : "",
+    outputDir: req.outputDir,
+    outputName: $("#outputNameInput").value.trim(),
+    customName: state.customName,
+    mode: req.mode,
+    model: req.model,
+    scale: req.scale,
+    factor: req.factor,
+    params: req.params,
+    provider: req.provider,
+    device: req.device,
+    gpu: req.gpu,
+    encoder: req.encoder,
+    container: req.container,
+    quality: req.quality,
+    rateControl: req.rateControl,
+    bitrate: req.bitrate,
+    qp: numberFrom("#qpInput", 0),
+    audioCodec: req.audioCodec,
+    audioBitrate: req.audioBitrate,
+    threads: req.threads,
+    workers: req.workers,
+    vram: req.vram,
+    gpuVram: req.gpuVram,
+    overlap: req.overlap,
+    kcolor: req.kcolor ? 1 : 0,
+    sceneThreshold: req.sceneThreshold,
+    startFrame: req.startFrame,
+    endFrame: req.endFrame,
+    instances: numberFrom("#instancesInput", 0),
+    sensitivity: req.sensitivity,
+    logHeight: state.settings.logHeight || Math.round($("#logPanel").getBoundingClientRect().height),
+    rdt: req.rdt,
+  };
+}
+
+let settingsTimer = 0;
+
+function syncSettingsSoon() {
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(saveSettings, 700);
+}
+
+async function saveSettings() {
+  if (!state.config) return;
+  try {
+    await postJSON("/api/settings", buildSettings());
+  } catch {}
+}
+
+function applySettings(app) {
+  const s = (app && app.state) || {};
+  if (s.lang === "zh" || s.lang === "en") lang = s.lang;
+  state.outputDir = s.outputDir || "";
+  state.outputName = s.outputName || "";
+  state.customName = !!s.customName;
+  $("#outputDirInput").value = state.outputDir;
+  $("#outputNameInput").value = state.outputName;
+  if (s.model) state.model = s.model;
+  if (s.provider) state.provider = s.provider;
+  state.device = s.device || "";
+  if (s.encoder) state.encoder = s.encoder;
+  if (s.container) state.container = s.container;
+  if (s.quality) state.quality = s.quality;
+  if (s.rateControl) state.rateControl = s.rateControl;
+  if (s.audioCodec) state.audioCodec = s.audioCodec;
+  if (s.scale) state.settings.scale = s.scale;
+  if (s.factor) state.settings.factor = s.factor;
+  if (s.sensitivity !== undefined) state.settings.sensitivity = s.sensitivity;
+  if (s.params) state.settings.params = s.params;
+  $("#bitrateInput").value = s.bitrate ?? 20;
+  $("#audioBitrateInput").value = s.audioBitrate ?? 320;
+  $("#gpuSelect").value = String(s.gpu ?? -2);
+  $("#threadsInput").value = s.threads ?? 0;
+  $("#workersInput").value = s.workers ?? 0;
+  $("#vramInput").value = s.vram ?? 0;
+  $("#qpInput").value = s.qp ?? 0;
+  $("#instancesInput").value = s.instances ?? 0;
+  $("#gpuVramInput").value = s.gpuVram ?? 0;
+  $("#overlapInput").value = s.overlap ?? 0;
+  $("#kcolorSelect").value = s.kcolor ? "1" : "0";
+  $("#sceneInput").value = s.sceneThreshold ?? 6.5;
+  $("#startInput").value = s.startFrame ?? -1;
+  $("#endInput").value = s.endFrame ?? -1;
+  if (s.logHeight) {
+    state.settings.logHeight = s.logHeight;
+    $("#logPanel").style.height = `${s.logHeight}px`;
+  }
+}
+
 async function pickInput() {
   if (state.busy || state.picking) return;
   if (!state.config) {
@@ -1003,8 +1112,8 @@ async function pickOutputDir() {
     if (res && res.path) {
       state.outputDir = res.path;
       $("#outputDirInput").value = res.path;
-      localStorage.setItem("gopaz.outputDir", res.path);
       syncOutputSoon();
+      syncSettingsSoon();
     }
   } catch (err) {
     toast(err.message, true);
@@ -1055,9 +1164,9 @@ async function loadInput(path) {
     $("#outputNameInput").value = "";
     if (!state.outputDir) {
       state.outputDir = info.dir;
-      localStorage.setItem("gopaz.outputDir", info.dir);
     }
     $("#outputDirInput").value = state.outputDir;
+    syncSettingsSoon();
     renderInput();
     resetJobView();
     state.outputPath = "";
@@ -1107,9 +1216,7 @@ function resetTaskLabels() {
   $("#progressTrack").classList.remove("indeterminate");
   $("#progressFill").style.width = "0%";
   $("#progressLabel").textContent = t("task.ready");
-  $("#progressValue").textContent = "0%";
-  $("#taskSpeed").textContent = `— ${t("task.fpsUnit")}`;
-  $("#taskEta").textContent = `${t("task.eta")} —`;
+  $("#progressValue").textContent = "—";
 }
 
 async function startJob() {
@@ -1128,8 +1235,6 @@ async function submitJob(req, isPreview) {
   $("#progressTrack").classList.remove("indeterminate");
   $("#progressLabel").textContent = t("task.preparing");
   $("#progressValue").textContent = "…";
-  $("#taskSpeed").textContent = `— ${t("task.fpsUnit")}`;
-  $("#taskEta").textContent = `${t("task.eta")} —`;
   setStatusKey("status.running");
   try {
     const job = await postJSON("/api/jobs", req);
@@ -1188,35 +1293,35 @@ function renderJob(job) {
   const running = job.state === "running";
   const track = $("#progressTrack");
   const prefix = job.preview ? `${t("task.preview")} · ` : "";
-  let pct = 0;
   const label = translateProgress(p.label);
+  const compiling = running && p.phase === "compile";
+  $("#compileOverlay").hidden = !compiling;
+  const speed = p.speed || 0;
+  const eta = p.eta || 0;
+  const info = [speed > 0 ? `${speed.toFixed(1)} ${t("task.fpsUnit")}` : `— ${t("task.fpsUnit")}`];
+  if (job.elapsed > 0) info.push(`${t("task.elapsed")} ${formatDuration(job.elapsed)}`);
+  if (running) info.push(`${t("task.eta")} ${eta > 0 ? formatDuration(eta) : "—"}`);
+  $("#progressValue").textContent = info.join(" · ");
   if (running && total <= 0) {
     track.classList.add("indeterminate");
     $("#progressFill").style.width = "";
-    $("#progressLabel").textContent = `${prefix}${label}`;
-    $("#progressValue").textContent = t("task.inProgress");
+    $("#progressLabel").textContent = compiling ? t("compile.title") : `${prefix}${label}`;
   } else {
     track.classList.remove("indeterminate");
-    pct = total > 0 ? Math.min(100, (p.cur / total) * 100) : p.pct >= 0 ? p.pct : 0;
+    const pct = total > 0 ? Math.min(100, (p.cur / total) * 100) : p.pct >= 0 ? p.pct : 0;
     $("#progressFill").style.width = `${pct}%`;
     const count = total > 0 ? ` ${p.cur}/${total}` : "";
-    $("#progressLabel").textContent = `${prefix}${label}${count}`;
-    $("#progressValue").textContent = `${pct.toFixed(1)}%`;
+    $("#progressLabel").textContent = compiling ? t("compile.title") : `${prefix}${label}${count}`;
   }
   if (job.state === "done") {
     $("#progressFill").style.width = "100%";
     $("#progressLabel").textContent = `${prefix}${t("task.done")}`;
-    $("#progressValue").textContent = "100%";
   } else if (job.state === "cancelled") {
     $("#progressLabel").textContent = `${prefix}${t("task.cancelled")}`;
   } else if (job.state === "error") {
     $("#progressLabel").textContent = `${prefix}${t("task.failed")}`;
   }
 
-  const speed = p.speed || 0;
-  const eta = p.eta || 0;
-  $("#taskSpeed").textContent = speed > 0 ? `${speed.toFixed(1)} ${t("task.fpsUnit")}` : `— ${t("task.fpsUnit")}`;
-  $("#taskEta").textContent = eta > 0 ? `${t("task.eta")} ${formatDuration(eta)}` : `${t("task.eta")} —`;
   $("#revealButton").hidden = job.preview || job.state !== "done";
   $("#cancelButton").hidden = job.state !== "running";
   appendLogs(job.logs || []);
@@ -1271,7 +1376,7 @@ function resetJobView() {
   clearTimeout(state.pollTimer);
   clearTimeout(state.previewTimer);
   $("#logPanel").innerHTML = "";
-  $("#logPanel").hidden = true;
+  $("#logWrap").hidden = true;
   $("#logButton").textContent = t("log.show");
   $("#cancelButton").hidden = true;
   $("#revealButton").hidden = true;
@@ -1325,6 +1430,12 @@ function finishJobUI(job) {
       $("#outputNameInput").value = name;
       renderOutputHint();
       renderCliHint();
+      loadPreview({
+        output: job.output,
+        previewStart: 0,
+        previewSourceDuration: inputDuration(),
+        full: true,
+      });
     }
     setStatusKey("status.done");
     toast(t("toast.done"));
@@ -1364,17 +1475,51 @@ async function revealOutput() {
 }
 
 function toggleLogs() {
+  const wrap = $("#logWrap");
+  wrap.hidden = !wrap.hidden;
+  $("#logButton").textContent = wrap.hidden ? t("log.show") : t("log.hide");
+  if (!wrap.hidden) {
+    const panel = $("#logPanel");
+    panel.scrollTop = panel.scrollHeight;
+  }
+}
+
+function bindLogResize() {
+  const handle = $("#logResize");
   const panel = $("#logPanel");
-  panel.hidden = !panel.hidden;
-  $("#logButton").textContent = panel.hidden ? t("log.show") : t("log.hide");
-  if (!panel.hidden) panel.scrollTop = panel.scrollHeight;
+  let dragging = false;
+  let startY = 0;
+  let startH = 0;
+  handle.addEventListener("pointerdown", (e) => {
+    dragging = true;
+    startY = e.clientY;
+    startH = panel.getBoundingClientRect().height;
+    handle.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  handle.addEventListener("pointermove", (e) => {
+    if (!dragging) return;
+    const h = clamp(Math.round(startH + (startY - e.clientY)), 80, Math.round(window.innerHeight * 0.7));
+    panel.style.height = `${h}px`;
+  });
+  const stop = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    try {
+      handle.releasePointerCapture(e.pointerId);
+    } catch {}
+    state.settings.logHeight = Math.round(panel.getBoundingClientRect().height);
+    syncSettingsSoon();
+  };
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
 }
 
 function bindEvents() {
   $("#languageButton").addEventListener("click", () => {
     lang = lang === "zh" ? "en" : "zh";
-    localStorage.setItem("gopaz.lang", lang);
     applyI18n();
+    syncSettingsSoon();
   });
 
   $("#pickInputButton").addEventListener("click", pickInput);
@@ -1390,15 +1535,23 @@ function bindEvents() {
   $("#pickOutputDirButton").addEventListener("click", pickOutputDir);
   $("#outputDirInput").addEventListener("change", () => {
     state.outputDir = $("#outputDirInput").value.trim();
-    localStorage.setItem("gopaz.outputDir", state.outputDir);
     syncOutputSoon();
+    syncSettingsSoon();
   });
   $("#outputDirInput").addEventListener("keydown", (e) => {
     if (e.key === "Enter") {
       state.outputDir = $("#outputDirInput").value.trim();
-      localStorage.setItem("gopaz.outputDir", state.outputDir);
       syncOutputSoon();
+      syncSettingsSoon();
     }
+  });
+
+  document.addEventListener("change", syncSettingsSoon, true);
+  document.addEventListener("input", syncSettingsSoon, true);
+  document.addEventListener("click", syncSettingsSoon, true);
+  window.addEventListener("beforeunload", () => {
+    if (!state.config || !navigator.sendBeacon) return;
+    navigator.sendBeacon("/api/settings", new Blob([JSON.stringify(buildSettings())], { type: "application/json" }));
   });
 
   const nameInput = $("#outputNameInput");
@@ -1543,6 +1696,7 @@ async function init() {
   requestAnimationFrame(playerTick);
   applyI18n();
   bindEvents();
+  bindLogResize();
   updateStartState();
   try {
     await loadConfig();
@@ -1632,7 +1786,7 @@ function updateTimeline() {
   if (state.preview) {
     const start = state.preview.start;
     const end = start + previewSourceSpan();
-    let text = `${t("task.preview")} ${formatSeconds(start)}–${formatSeconds(end)}`;
+    let text = `${state.preview.full ? t("player.output") : t("task.preview")} ${formatSeconds(start)}–${formatSeconds(end)}`;
     if (!originalMode) text += ` → ${formatSeconds(processedDuration())}`;
     label.textContent = text;
     label.title = text;
@@ -1799,6 +1953,7 @@ function loadPreview(job) {
     start: job.previewStart || 0,
     sourceDuration: job.previewSourceDuration || 0,
     outputDuration: job.previewDuration || 0,
+    full: !!job.full,
   };
   const processed = $("#videoProcessed");
   processed.src = mediaURL(job.output);

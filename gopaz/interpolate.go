@@ -350,6 +350,8 @@ func warmupInterp(r *Runner) error {
 	}
 	w := newInterpWorker(r, r.pool[0], bot, plan)
 	Infof("Warming up TensorRT engine for tile %dx%d; the first run may take several minutes", plan.tw, plan.th)
+	Phase("compile")
+	defer Phase("")
 	start := time.Now()
 	out, err := w.run(win, tiles)
 	if err != nil {
