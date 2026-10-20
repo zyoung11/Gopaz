@@ -83,11 +83,12 @@ type VideoDecoder struct {
 	stdout    *bufio.Reader
 	stderr    bytes.Buffer
 	closeOnce sync.Once
+	frames    int
 }
 
 // NewVideoDecoder starts ffmpeg and streams rawvideo rgb24 to a stdout pipe.
 // A startFrame or endFrame of -1 leaves that end unbounded.
-func NewVideoDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int) (*VideoDecoder, error) {
+func NewVideoDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int, hwaccel string) (*VideoDecoder, error) {
 	filter := fmt.Sprintf("scale=%d:%d:flags=bicubic", w, h)
 	selecting := false
 	switch {
@@ -101,9 +102,20 @@ func NewVideoDecoder(ffmpeg, path string, w, h int, startFrame, endFrame int) (*
 		filter = fmt.Sprintf("select='lte(n\\,%d)',scale=%d:%d:flags=bicubic", endFrame, w, h)
 		selecting = true
 	}
-	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+	args := []string{"-hide_banner", "-loglevel", "error", "-nostdin", "-y"}
+	hw := strings.ToLower(strings.TrimSpace(hwaccel))
+	switch hw {
+	case "cuda":
+		args = append(args, "-hwaccel", "cuda")
+	case "qsv":
+		args = append(args, "-hwaccel", "qsv")
+	}
+	if hw == "cuda" || hw == "qsv" {
+		filter = "hwdownload,format=nv12," + filter
+	}
+	args = append(args,
 		"-i", path,
-		"-vf", filter}
+		"-vf", filter)
 	if selecting {
 		args = append(args, "-vsync", "0")
 	}
@@ -132,7 +144,15 @@ func (d *VideoDecoder) ReadFrame(buf []byte) error {
 	if err == io.ErrUnexpectedEOF || err == io.EOF {
 		return io.EOF
 	}
+	if err == nil {
+		d.frames++
+	}
 	return err
+}
+
+// Frames returns the number of frames decoded so far.
+func (d *VideoDecoder) Frames() int {
+	return d.frames
 }
 
 // Close terminates the decoder process.

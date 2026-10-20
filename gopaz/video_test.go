@@ -34,7 +34,7 @@ func TestVideoDecoderStderr(t *testing.T) {
 	if err != nil {
 		t.Skip("ffmpeg not found")
 	}
-	d, err := NewVideoDecoder(ffmpeg, filepath.Join(t.TempDir(), "missing.mp4"), 64, 64, -1, -1)
+	d, err := NewVideoDecoder(ffmpeg, filepath.Join(t.TempDir(), "missing.mp4"), 64, 64, -1, -1, "sw")
 	if err != nil {
 		t.Fatalf("start decoder: %v", err)
 	}

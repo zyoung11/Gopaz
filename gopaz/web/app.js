@@ -94,6 +94,7 @@ const I18N = {
     "task.interpolating": "Interpolating",
     "task.inProgress": "In progress",
     "task.elapsed": "Elapsed",
+    "task.live": "Live",
     "compile.title": "Precompiling",
     "compile.tip": "Building the compute engine for this model and shape. The first time takes a few minutes. The result is cached in the cache folder and the same model and shape never compiles again. Changing model, resolution, scale or provider may trigger a new build. Deleting the cache folder frees space and only costs one rebuild.",
     "models.none": "No model files found in the models folder",
@@ -224,7 +225,8 @@ const I18N = {
     "task.enhancing": "增强中",
     "task.interpolating": "插帧中",
     "task.inProgress": "进行中",
-    "task.elapsed": "已用",
+    "task.elapsed": "用时",
+    "task.live": "实时",
     "compile.title": "预编译中",
     "compile.tip": "正在为当前模型和尺寸构建计算引擎，首次需要几分钟。构建结果缓存在 cache 文件夹，相同模型和尺寸再次运行无需重新编译；更换模型、分辨率、倍率或后端可能触发重新编译。删除 cache 文件夹可以释放空间，代价只是下次重新构建一次。",
     "models.none": "models 文件夹中未找到模型文件",
@@ -290,6 +292,7 @@ const state = {
   model: "proteus",
   provider: "cuda",
   device: "",
+  videoDevice: "sw",
   encoder: "",
   container: "",
   quality: "High",
@@ -581,7 +584,6 @@ function selectModel(key, sync = true) {
 
   $$(".filter-item").forEach((el) => el.classList.toggle("active", el.dataset.model === key));
   $("#modelBadge").textContent = model.display;
-  $("#previewKind").textContent = model.display;
 
   $("#kcolorField").hidden = model.kind !== "enhance";
   $("#sceneField").hidden = model.kind !== "enhance";
@@ -601,11 +603,6 @@ function renderModelSettings() {
   if (!model) return;
   const host = $("#modelSettings");
   host.innerHTML = "";
-
-  const head = document.createElement("div");
-  head.className = "model-head";
-  head.innerHTML = `<b>${model.display}</b><small>${model.kind === "enhance" ? t("settings.enhance") : t("settings.interp")}</small>`;
-  host.append(head);
 
   if (model.kind === "enhance") {
     const group = document.createElement("div");
@@ -887,6 +884,7 @@ function updateAudioState() {
 function updateStartState() {
   const btn = $("#startButton");
   btn.disabled = !state.input || state.busy || !state.outputPath;
+  btn.hidden = state.busy;
   btn.textContent = state.busy ? t("task.processing") : t("task.start");
   updatePreviewButton();
 }
@@ -909,6 +907,7 @@ function renderCliHint() {
   parts.push(`--encoder ${state.encoder}`);
   if (state.provider !== "cuda") parts.push(`--provider ${state.provider}`);
   if (state.device) parts.push(`--device ${state.device}`);
+  if (state.videoDevice && state.videoDevice !== "sw") parts.push(`--video-device ${state.videoDevice}`);
   const line = parts.join(" ");
   const el = $("#cliHint");
   el.textContent = line;
@@ -983,6 +982,7 @@ function buildRequest() {
     gpu: numberFrom("#gpuSelect", -2),
     provider: state.provider,
     device: state.device,
+    videoDevice: state.videoDevice,
     threads: numberFrom("#threadsInput"),
     workers: numberFrom("#workersInput"),
     vram: numberFrom("#vramInput"),
@@ -1012,6 +1012,7 @@ function buildSettings() {
     params: req.params,
     provider: req.provider,
     device: req.device,
+    videoDevice: state.videoDevice,
     gpu: req.gpu,
     encoder: req.encoder,
     container: req.container,
@@ -1062,6 +1063,9 @@ function applySettings(app) {
   if (s.model) state.model = s.model;
   if (s.provider) state.provider = s.provider;
   state.device = s.device || "";
+  if (s.videoDevice) {
+    state.videoDevice = s.videoDevice;
+  }
   if (s.encoder) state.encoder = s.encoder;
   if (s.container) state.container = s.container;
   if (s.quality) state.quality = s.quality;
@@ -1207,8 +1211,6 @@ function renderInput() {
   $("#previewPath").textContent = info.path;
   $("#previewPath").title = info.path;
 
-
-  $("#previewKind").textContent = currentModel().display;
   updatePlayerModeUI();
   updateTimeline();
 
@@ -1216,8 +1218,14 @@ function renderInput() {
 
 
 function resetTaskLabels() {
-  $("#progressTrack").classList.remove("indeterminate");
-  $("#progressFill").style.width = "0%";
+  const track = $("#progressTrack");
+  const fill = $("#progressFill");
+  track.classList.remove("indeterminate");
+  track.classList.remove("done");
+  fill.style.transition = "none";
+  fill.style.width = "0%";
+  void fill.offsetWidth;
+  fill.style.transition = "";
   $("#progressLabel").textContent = t("task.ready");
   $("#progressValue").textContent = "—";
 }
@@ -1292,6 +1300,27 @@ function startPolling(id) {
   state.pollTimer = setTimeout(poll, 300);
 }
 
+let compileTimer = 0;
+
+function updateCompileOverlay(compiling) {
+  const overlay = $("#compileOverlay");
+  if (!compiling) {
+    clearTimeout(compileTimer);
+    compileTimer = 0;
+    overlay.hidden = true;
+    return;
+  }
+  if (compileTimer || !overlay.hidden) return;
+  compileTimer = setTimeout(() => {
+    compileTimer = 0;
+    const job = state.job;
+    const p = job && job.progress;
+    if (job && job.state === "running" && p && p.phase === "compile") {
+      overlay.hidden = false;
+    }
+  }, 3500);
+}
+
 function renderJob(job) {
   const p = job.progress || {};
   const total = p.total || job.total || 0;
@@ -1300,7 +1329,8 @@ function renderJob(job) {
   const prefix = job.preview ? `${t("task.preview")} · ` : "";
   const label = translateProgress(p.label);
   const compiling = running && p.phase === "compile";
-  $("#compileOverlay").hidden = !compiling;
+  updateCompileOverlay(compiling);
+  const compileShown = compiling && !$("#compileOverlay").hidden;
   const speed = p.speed || 0;
   const eta = p.eta || 0;
   const info = [speed > 0 ? `${speed.toFixed(1)} ${t("task.fpsUnit")}` : `— ${t("task.fpsUnit")}`];
@@ -1310,14 +1340,15 @@ function renderJob(job) {
   if (running && total <= 0) {
     track.classList.add("indeterminate");
     $("#progressFill").style.width = "";
-    $("#progressLabel").textContent = compiling ? t("compile.title") : `${prefix}${label}`;
+    $("#progressLabel").textContent = compileShown ? t("compile.title") : `${prefix}${label}`;
   } else {
     track.classList.remove("indeterminate");
     const pct = total > 0 ? Math.min(100, (p.cur / total) * 100) : p.pct >= 0 ? p.pct : 0;
     $("#progressFill").style.width = `${pct}%`;
     const count = total > 0 ? ` ${p.cur}/${total}` : "";
-    $("#progressLabel").textContent = compiling ? t("compile.title") : `${prefix}${label}${count}`;
+    $("#progressLabel").textContent = compileShown ? t("compile.title") : `${prefix}${label}${count}`;
   }
+  track.classList.toggle("done", job.state === "done");
   if (job.state === "done") {
     $("#progressFill").style.width = "100%";
     $("#progressLabel").textContent = `${prefix}${t("task.done")}`;
@@ -1501,6 +1532,15 @@ async function revealOutput() {
   }
 }
 
+function syncProgressDots() {
+  const track = $("#progressTrack");
+  const w = track.clientWidth;
+  if (w > 0) {
+    const cols = Math.max(1, Math.round(w / 5));
+    track.style.setProperty("--dot-pitch", `${w / cols}px`);
+  }
+}
+
 function toggleLogs() {
   const wrap = $("#logWrap");
   wrap.hidden = !wrap.hidden;
@@ -1509,37 +1549,6 @@ function toggleLogs() {
     const panel = $("#logPanel");
     panel.scrollTop = panel.scrollHeight;
   }
-}
-
-function bindLogResize() {
-  const handle = $("#logResize");
-  const panel = $("#logPanel");
-  let dragging = false;
-  let startY = 0;
-  let startH = 0;
-  handle.addEventListener("pointerdown", (e) => {
-    dragging = true;
-    startY = e.clientY;
-    startH = panel.getBoundingClientRect().height;
-    handle.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  });
-  handle.addEventListener("pointermove", (e) => {
-    if (!dragging) return;
-    const h = clamp(Math.round(startH + (startY - e.clientY)), 80, Math.round(window.innerHeight * 0.7));
-    panel.style.height = `${h}px`;
-  });
-  const stop = (e) => {
-    if (!dragging) return;
-    dragging = false;
-    try {
-      handle.releasePointerCapture(e.pointerId);
-    } catch {}
-    state.settings.logHeight = Math.round(panel.getBoundingClientRect().height);
-    syncSettingsSoon();
-  };
-  handle.addEventListener("pointerup", stop);
-  handle.addEventListener("pointercancel", stop);
 }
 
 function bindEvents() {
@@ -1686,8 +1695,20 @@ function bindEvents() {
     });
     video.addEventListener("error", updatePlayerModeUI);
   }
+  $("#videoOriginal").addEventListener("ended", () => {
+    const original = $("#videoOriginal");
+    if (state.playerMode === "original") {
+      original.currentTime = 0;
+      original.play().catch(() => {});
+    }
+    updatePlayButton();
+  });
   $("#videoProcessed").addEventListener("ended", () => {
-    $("#videoOriginal").pause();
+    const original = $("#videoOriginal");
+    const processed = $("#videoProcessed");
+    processed.currentTime = 0;
+    original.currentTime = state.preview ? state.preview.start : 0;
+    Promise.all([processed.play(), original.play()]).catch(() => {});
     updatePlayButton();
   });
 
@@ -1722,7 +1743,8 @@ function bindEvents() {
 async function init() {
   requestAnimationFrame(playerTick);
   bindEvents();
-  bindLogResize();
+  syncProgressDots();
+  new ResizeObserver(syncProgressDots).observe($("#progressTrack"));
   updateStartState();
   let ok = true;
   try {
@@ -1807,12 +1829,17 @@ function updateTimeline() {
     seek.value = clamp(value, 0, dur || 1);
   }
   const range = $("#timelineRange");
-  if (originalMode && state.preview && dur > 0) {
-    const left = clamp(state.preview.start / dur, 0, 1) * 100;
-    const width = clamp(previewSourceSpan() / dur, 0, 1) * 100;
+  if (state.preview && dur > 0) {
     range.hidden = false;
-    range.style.left = `${left}%`;
-    range.style.width = `${Math.max(width, 0.5)}%`;
+    if (originalMode) {
+      const left = clamp(state.preview.start / dur, 0, 1) * 100;
+      const width = clamp(previewSourceSpan() / dur, 0, 1) * 100;
+      range.style.left = `${left}%`;
+      range.style.width = `${Math.max(width, 0.5)}%`;
+    } else {
+      range.style.left = "0%";
+      range.style.width = "100%";
+    }
   } else {
     range.hidden = true;
   }
@@ -1851,6 +1878,9 @@ function updatePlayerModeUI() {
   const line = $("#dividerLine");
   line.hidden = mode !== "divider" || !hasPreview;
   const message = $("#playerMessage");
+  const compareMode = hasPreview && (mode === "side" || mode === "divider");
+  $("#cmpLeft").hidden = !compareMode;
+  $("#cmpRight").hidden = !compareMode;
   if (mode !== "original" && !hasPreview) {
     message.textContent = t("player.noPreview");
     message.hidden = false;
@@ -1872,21 +1902,31 @@ function setPlayerMode(mode) {
   const source = currentSourceTime();
   const original = $("#videoOriginal");
   const processed = $("#videoProcessed");
-  original.pause();
-  processed.pause();
+  const prevMode = state.playerMode;
+  const keepPlaying = prevMode !== "original" ? !processed.paused : !original.paused;
   state.playerMode = mode;
   if (mode === "original") {
+    original.pause();
+    processed.pause();
     original.playbackRate = 1;
     const dur = inputDuration();
     if (dur > 0) original.currentTime = clamp(source, 0, dur);
-  } else if (state.preview) {
-    const out = processedDuration();
-    const span = previewSourceSpan();
-    processed.playbackRate = 1;
-    original.playbackRate = out > 0 && span > 0 ? span / out : 1;
-    const ratio = span > 0 ? clamp((source - state.preview.start) / span, 0, 1) : 0;
-    if (out > 0) processed.currentTime = ratio * out;
-    original.currentTime = state.preview.start + ratio * span;
+    updatePlayerModeUI();
+    return;
+  }
+  if (prevMode !== "original") {
+    updatePlayerModeUI();
+    return;
+  }
+  const out = processedDuration();
+  const span = previewSourceSpan();
+  processed.playbackRate = 1;
+  original.playbackRate = out > 0 && span > 0 ? span / out : 1;
+  const ratio = span > 0 ? clamp((source - state.preview.start) / span, 0, 1) : 0;
+  if (out > 0) processed.currentTime = ratio * out;
+  original.currentTime = state.preview.start + ratio * span;
+  if (keepPlaying) {
+    Promise.all([processed.play(), original.play()]).catch(() => {});
   }
   updatePlayerModeUI();
 }
@@ -2014,7 +2054,7 @@ function loadPreview(job) {
   const original = $("#videoOriginal");
   original.pause();
   original.currentTime = state.preview.start;
-  state.playerMode = "divider";
+  state.playerMode = state.mode === "interp" ? "side" : "divider";
   setDivider(50);
   updatePlayerModeUI();
   updateTimeline();
@@ -2037,5 +2077,6 @@ function startPreview() {
 function updatePreviewButton() {
   const button = $("#previewButton");
   button.disabled = !state.input || state.busy;
+  button.hidden = state.busy;
   button.textContent = state.busy && state.job && state.job.preview ? t("task.previewing") : t("task.preview");
 }

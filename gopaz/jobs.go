@@ -42,6 +42,7 @@ type jobRequest struct {
 	GPU            int                `json:"gpu"`
 	Provider       string             `json:"provider"`
 	Device         string             `json:"device"`
+	VideoDevice    string             `json:"videoDevice"`
 	Threads        int                `json:"threads"`
 	Workers        int                `json:"workers"`
 	VramGB         float64            `json:"vram"`
@@ -318,7 +319,11 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 	if info.Frames <= 0 || info.FPS <= 0 {
 		return nil, errors.New("cannot determine frame count for preview")
 	}
-	span := max(1, int(math.Round(2*info.FPS)))
+	seconds := loadAppConfig().PreviewDuration
+	if seconds <= 0 {
+		seconds = 2
+	}
+	span := max(1, int(math.Round(seconds*info.FPS)))
 	span = min(span, info.Frames)
 	start := int(math.Round(req.PreviewStart * info.FPS))
 	start = min(start, info.Frames-span)
@@ -442,6 +447,7 @@ func buildJobArgs(req *jobRequest, plan *jobPlan) []string {
 		"--quality", req.Quality, "--rate-control", req.RateControl,
 		"--audio-codec", req.AudioCodec,
 		"--provider", req.Provider, "--device", req.Device,
+		"--video-device", req.VideoDevice,
 		"--gpu", itoa(req.GPU), "--threads", itoa(req.Threads),
 		"--workers", itoa(req.Workers), "--vram", ftoa(req.VramGB),
 		"--overlap", itoa(req.Overlap),

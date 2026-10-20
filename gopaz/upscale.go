@@ -22,6 +22,7 @@ type UpscaleJob struct {
 	VramGB          float64
 	Overlap         int
 	Provider        Provider
+	VideoDevice     string
 	Device          string
 	// KColor enables Lab color correction when the model uses keepColor.
 	KColor bool
@@ -124,7 +125,7 @@ func RunUpscale(job UpscaleJob) error {
 		return err
 	}
 	tmpVideo := TempVideoPath(job.Output)
-	dec, err := NewVideoDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End)
+	dec, err := NewVideoDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End, job.VideoDevice)
 	if err != nil {
 		return err
 	}
@@ -241,6 +242,12 @@ func RunUpscale(job UpscaleJob) error {
 		}
 	}
 	ProgressDone()
+	if dec.Frames() == 0 {
+		writer.Close()
+		enc.Close()
+		os.Remove(tmpVideo)
+		return fmt.Errorf("decoder produced no frames; try another video engine or software decoding; ffmpeg: %s", dec.Stderr())
+	}
 	if err := writer.Close(); err != nil {
 		enc.Close()
 		if se := enc.Stderr(); se != "" {

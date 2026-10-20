@@ -94,12 +94,13 @@
       <div class="player" id="player" hidden>
         <div class="player-top">
           <span class="preview-file" id="previewFile"></span>
-          <span class="badge accent" id="previewKind"></span>
         </div>
         <div class="player-stage mode-original" id="playerStage">
           <video id="videoOriginal" class="player-video original" playsinline muted preload="metadata"></video>
           <video id="videoProcessed" class="player-video processed" playsinline muted preload="metadata"></video>
           <div class="player-message" id="playerMessage" hidden></div>
+          <div class="cmp-label cmp-left" id="cmpLeft" data-i18n="player.original" hidden>Original</div>
+          <div class="cmp-label cmp-right" id="cmpRight" data-i18n="player.processed" hidden>Processed</div>
           <div class="compile-overlay" id="compileOverlay" hidden>
             <div class="compile-overlay-inner" data-tooltip-key="compile.tip">
               <svg class="icon"><use href="#i-spanner"/></svg>
@@ -202,7 +203,6 @@
       </div>
     </div>
     <div class="log-wrap" id="logWrap" hidden>
-      <div class="log-resize" id="logResize" title="Drag to resize"></div>
       <pre class="log-panel" id="logPanel"></pre>
     </div>
   </footer>

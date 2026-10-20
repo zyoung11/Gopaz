@@ -1,4 +1,16 @@
-# Gopaz
+<div align="center">
+<pre>                                    
+  .g8"""bgd                                      
+.dP'     `M                                      
+dM'       `   ,pW"Wq.`7MMpdMAo.  ,6"Yb.  M"""MMV 
+MM           6W'   `Wb MM   `Wb 8)   MM  '  AMV  
+MM.    `7MMF'8M     M8 MM    M8  ,pm9MM    AMV   
+`Mb.     MM  YA.   ,A9 MM   ,AP 8M   MM   AMV  , 
+  `"bmmmdPY   `Ybmd9'  MMbmmd'  `Moo9^Yo.AMMmmmM 
+                       MM                        
+                     .JMML.                      </pre>
+</div>
+
 
 Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web 界面。输入视频，用本地 GPU 做超分/修复或慢放/插帧。纯 Go 实现，无 cgo、无 C 编译器、无 Python。
 
@@ -80,6 +92,7 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 {
   "saveState": true,
   "restoreVideo": true,
+  "previewDuration": 2,
   "port": 8765,
   "state": { "lang": "zh", "model": "proteus", "...": "上次的全部选择" }
 }
@@ -89,6 +102,7 @@ Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web �
 |---|---|---|
 | `saveState` | `true` | 是否把 UI 状态持续写回本文件，关闭后 state 不再更新 |
 | `restoreVideo` | `true` | 启动时自动加载上次选择的视频，置为 `false` 关闭 |
+| `previewDuration` | `2` | 预览处理的源时长（秒） |
 | `port` | `8765` | Web 端口，`--port` 参数优先于本项 |
 
 `state` 保存使用过程中的全部选择：模型和参数、倍率/倍数、供应商和设备、编码器、容器、质量、码率控制、音频、线程/显存等高级参数、语言、输出目录和文件名。下次打开 Web 时自动恢复。
@@ -134,6 +148,7 @@ gopaz interpolate -i input.mp4 -o output.mp4 --model aion --factor 8 --sensitivi
 |---|---|
 | `--provider cuda / tensorrt / dml / openvino / cpu` | 推理后端 |
 | `--device <id>` | CUDA/TensorRT/DML 设备索引，或 OpenVINO `GPU.0`/`GPU.1`/`NPU`/`CPU` |
+| `--video-device <name>` | 视频解码引擎：`sw` 软件（默认）、`cuda` NVDEC、`qsv` Intel Quick Sync，不影响推理设备 |
 | `--gpu <id>` | -2 自动，-1 CPU；`--device` 省略时作为设备号兜底 |
 | `--threads <n>` | 推理线程数 |
 | `--workers <n>` | 并行 worker 数，0 自动 |

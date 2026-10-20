@@ -361,6 +361,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if provider == ProviderTensorRT {
 		Infof("TensorRT session ready in %.1fs", time.Since(sessionStart).Seconds())
 	}
+	Phase("")
 	inputs, err := sess.Inputs()
 	if err != nil {
 		for _, s := range pool {

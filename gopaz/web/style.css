@@ -235,6 +235,28 @@ input[type="range"]::-moz-range-thumb {
   letter-spacing: 0.04em;
 }
 
+.cmp-label {
+  position: absolute;
+  top: 10px;
+  z-index: 4;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: rgba(23, 23, 23, 0.75);
+  color: var(--text-2);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+.cmp-left {
+  left: 10px;
+}
+
+.cmp-right {
+  right: 10px;
+}
+
 .compile-overlay {
   position: absolute;
   inset: 0;
@@ -861,24 +883,6 @@ input[type="range"]::-moz-range-thumb {
   padding: 10px;
 }
 
-.model-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-}
-
-.model-head b {
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.model-head small {
-  color: var(--text-3);
-  font-size: 10px;
-}
-
 .control-group {
   margin-top: 12px;
 }
@@ -1039,21 +1043,34 @@ input[type="range"]::-moz-range-thumb {
 
 .progress-track {
   position: relative;
-  height: 4px;
+  height: 18px;
   overflow: hidden;
   border-radius: 2px;
-  background: var(--border-strong);
+  background-color: transparent;
+  background-image: radial-gradient(circle at center, rgba(255, 255, 255, 0.22) 1.1px, transparent 1.7px);
+  background-size: var(--dot-pitch, 5px) 6px;
 }
 
 .progress-fill {
   width: 0;
   height: 100%;
   border-radius: 2px;
-  background: var(--accent);
+  background-color: transparent;
+  background-image: radial-gradient(circle at center, var(--accent) 1.1px, transparent 1.7px);
+  background-size: var(--dot-pitch, 5px) 6px;
+  transition: width 0.6s ease;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 calc(100% - 24px), transparent 100%);
+}
+
+.progress-track.done .progress-fill {
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 .progress-track.indeterminate .progress-fill {
   width: 32% !important;
+  transition: none;
   animation: indeterminate 1.2s ease-in-out infinite;
 }
 
@@ -1150,14 +1167,7 @@ body.booting .app {
 }
 
 .log-resize {
-  height: 7px;
-  cursor: row-resize;
-  border-radius: var(--radius) var(--radius) 0 0;
-  background: var(--border);
-}
-
-.log-resize:hover {
-  background: var(--border-strong);
+  display: none;
 }
 
 .log-panel {
@@ -1165,8 +1175,9 @@ body.booting .app {
   margin: 0;
   padding: 8px 10px;
   overflow: auto;
+  resize: vertical;
   border: 1px solid var(--border);
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: var(--radius);
   background: var(--panel-2);
   color: var(--text-2);
   font: 10px/1.55 var(--mono);

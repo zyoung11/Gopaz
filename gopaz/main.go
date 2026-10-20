@@ -172,6 +172,7 @@ func cmdUpscale(args []string) error {
 	gpu := fs.Int("gpu", -2, "GPU device")
 	provider := fs.String("provider", "cuda", "inference provider")
 	device := fs.String("device", "", "provider device")
+	videoDevice := fs.String("video-device", "sw", "video decode acceleration sw, cuda or qsv")
 	threads := fs.Int("threads", 0, "inference thread count")
 	workers := fs.Int("workers", 0, "parallel workers, 0 = auto")
 	vram := fs.Float64("vram", 0, "per-session VRAM limit in GB, 0 = auto")
@@ -227,7 +228,7 @@ func cmdUpscale(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
 		Params: params, GPU: *gpu, Threads: *threads, Workers: *workers, VramGB: *vram, Overlap: *overlap,
-		Provider: Provider(*provider), Device: *device,
+		Provider: Provider(*provider), Device: *device, VideoDevice: *videoDevice,
 		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
 		StartFrame: *start, EndFrame: *end,
 		Encode:    EncodeOptions{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},
@@ -251,6 +252,7 @@ func cmdInterpolate(args []string) error {
 	gpu := fs.Int("gpu", -2, "GPU device")
 	provider := fs.String("provider", "cuda", "inference provider")
 	device := fs.String("device", "", "provider device")
+	videoDevice := fs.String("video-device", "sw", "video decode acceleration sw, cuda or qsv")
 	threads := fs.Int("threads", 0, "inference thread count")
 	overlap := fs.Int("overlap", 0, "block overlap, 0 = auto")
 	ffmpeg := fs.String("ffmpeg", "", "ffmpeg path")
@@ -283,7 +285,7 @@ func cmdInterpolate(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Factor: *factor,
 		GPU: *gpu, Threads: *threads, Overlap: *overlap,
-		Provider: Provider(*provider), Device: *device,
+		Provider: Provider(*provider), Device: *device, VideoDevice: *videoDevice,
 		Instances: *instances, Workers: *workers, RDT: *rdt, Sensitivity: *sensitivity, VramGB: *vram, DeviceVRAMGB: *gpuVRAM,
 		StartFrame: *start, EndFrame: *end,
 		Encode:    EncodeOptions{EncoderID: *encID, Quality: *quality, QP: *qp, RateControl: *rc, Bitrate: *bitrate},

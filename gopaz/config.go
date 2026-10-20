@@ -22,6 +22,7 @@ type AppState struct {
 	Params         map[string]float64 `json:"params"`
 	Provider       string             `json:"provider"`
 	Device         string             `json:"device"`
+	VideoDevice    string             `json:"videoDevice"`
 	GPU            int                `json:"gpu"`
 	Encoder        string             `json:"encoder"`
 	Container      string             `json:"container"`
@@ -49,10 +50,11 @@ type AppState struct {
 // AppConfig is the persistent application configuration stored in config.json
 // next to the executable.
 type AppConfig struct {
-	SaveState    bool     `json:"saveState"`
-	RestoreVideo bool     `json:"restoreVideo"`
-	Port         int      `json:"port"`
-	State        AppState `json:"state"`
+	SaveState        bool     `json:"saveState"`
+	RestoreVideo     bool     `json:"restoreVideo"`
+	PreviewDuration  float64  `json:"previewDuration"`
+	Port             int      `json:"port"`
+	State            AppState `json:"state"`
 }
 
 var appCfgMu sync.Mutex
@@ -60,9 +62,10 @@ var appCfgMu sync.Mutex
 // defaultAppConfig returns the first-run configuration.
 func defaultAppConfig() AppConfig {
 	return AppConfig{
-		SaveState:    true,
-		RestoreVideo: true,
-		Port:         8765,
+		SaveState:       true,
+		RestoreVideo:    true,
+		PreviewDuration: 2,
+		Port:            8765,
 		State: AppState{
 			Lang: "en", Model: "proteus", Mode: "enhance",
 			Scale: 2, Factor: 2, Params: map[string]float64{},

@@ -11,7 +11,7 @@ func TestAppConfigFirstRun(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
 	t.Setenv("GOPAZ_CONFIG", path)
 	cfg := loadAppConfig()
-	if !cfg.SaveState || !cfg.RestoreVideo || cfg.Port != 8765 {
+	if !cfg.SaveState || !cfg.RestoreVideo || cfg.Port != 8765 || cfg.PreviewDuration != 2 {
 		t.Fatalf("defaults = %+v", cfg)
 	}
 	b, err := os.ReadFile(path)

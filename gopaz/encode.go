@@ -9,6 +9,8 @@ import (
 type EncoderSpec struct {
 	ID   string
 	Desc string
+	// Family selects the rate control dialect: nvenc, qsv or empty for the rest.
+	Family string
 	// Base holds the base video encoding arguments.
 	Base []string
 	// Extensions lists the container extensions this encoder accepts.
@@ -34,6 +36,20 @@ func EncoderRegistry() map[string]*EncoderSpec {
 			ID: "h264-main-sw", Desc: "H.264 High, libx264, 8bit",
 			Base:       strings.Fields("-c:v libx264 -profile:v high -pix_fmt yuv420p -g 30 -preset veryfast -crf 18"),
 			Extensions: []string{"mov", "mkv", "mp4"},
+		},
+		"h264-main-win-qsv": {
+			ID: "h264-main-win-qsv", Desc: "H.264 High, Quick Sync, 8bit",
+			Family:     "qsv",
+			Base:       strings.Fields("-c:v h264_qsv -profile:v high -pix_fmt yuv420p -g 30 -preset medium"),
+			Extensions: []string{"mov", "mkv", "mp4"},
+			CQP:        map[string]int{"High": 18, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
+		},
+		"h265-main-win-qsv": {
+			ID: "h265-main-win-qsv", Desc: "H.265 Main, Quick Sync, 8bit",
+			Family:     "qsv",
+			Base:       strings.Fields("-c:v hevc_qsv -profile:v main -pix_fmt yuv420p -tag:v hvc1 -g 30 -preset medium"),
+			Extensions: []string{"mov", "mkv", "mp4"},
+			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
 		},
 		"h265-main-win-nvidia": {
 			ID: "h265-main-win-nvidia", Desc: "H.265 Main, NVENC, 8bit",
@@ -107,6 +123,7 @@ func GetEncoder(id string) (*EncoderSpec, error) {
 func EncoderIDs() []string {
 	return []string{
 		"h264-main-win-nvidia", "h264-main-sw", "h265-main-win-nvidia", "h265-main10-win-nvidia",
+		"h264-main-win-qsv", "h265-main-win-qsv",
 		"av1-win-nvidia", "av1-10bit-win-nvidia",
 		"prores-422-hq-win", "prores-422-std-win", "prores-422-lt-win",
 		"ffv1-10bit-444", "ffv1-10bit-420", "vp9-best",
@@ -152,8 +169,12 @@ func BuildArgs(opt EncodeOptions) ([]string, error) {
 					return nil, fmt.Errorf("encoder %s does not support quality %q (use High/Mid/Low)", e.ID, q)
 				}
 			}
-			args = append(args, strings.Fields("-preset p7 -tune hq -rc constqp -rc-lookahead 20 -spatial_aq 1 -aq-strength 15 -b:v 0")...)
-			args = append(args, "-qp", fmt.Sprintf("%d", qp))
+			if e.Family == "qsv" {
+				args = append(args, "-global_quality", fmt.Sprintf("%d", qp))
+			} else {
+				args = append(args, strings.Fields("-preset p7 -tune hq -rc constqp -rc-lookahead 20 -spatial_aq 1 -aq-strength 15 -b:v 0")...)
+				args = append(args, "-qp", fmt.Sprintf("%d", qp))
+			}
 		}
 	case "cbr":
 		if !e.RateControl {
@@ -162,8 +183,12 @@ func BuildArgs(opt EncodeOptions) ([]string, error) {
 		if opt.Bitrate <= 0 {
 			return nil, fmt.Errorf("cbr requires --bitrate (Mbps)")
 		}
-		args = append(args, strings.Fields("-rc cbr -preset p6")...)
-		args = append(args, "-b:v", fmt.Sprintf("%dM", opt.Bitrate))
+		if e.Family == "qsv" {
+			args = append(args, "-b:v", fmt.Sprintf("%dM", opt.Bitrate), "-maxrate", fmt.Sprintf("%dM", opt.Bitrate))
+		} else {
+			args = append(args, strings.Fields("-rc cbr -preset p6")...)
+			args = append(args, "-b:v", fmt.Sprintf("%dM", opt.Bitrate))
+		}
 	case "vbr":
 		if !e.RateControl {
 			return nil, fmt.Errorf("encoder %s does not support vbr", e.ID)
@@ -171,8 +196,12 @@ func BuildArgs(opt EncodeOptions) ([]string, error) {
 		if opt.Bitrate <= 0 {
 			return nil, fmt.Errorf("vbr requires --bitrate (Mbps)")
 		}
-		args = append(args, strings.Fields("-preset p7 -tune hq -rc vbr -b:v 0")...)
-		args = append(args, "-cq", "19", "-maxrate", fmt.Sprintf("%dM", opt.Bitrate))
+		if e.Family == "qsv" {
+			args = append(args, "-global_quality", "19", "-maxrate", fmt.Sprintf("%dM", opt.Bitrate))
+		} else {
+			args = append(args, strings.Fields("-preset p7 -tune hq -rc vbr -b:v 0")...)
+			args = append(args, "-cq", "19", "-maxrate", fmt.Sprintf("%dM", opt.Bitrate))
+		}
 	default:
 		return nil, fmt.Errorf("unknown rate control %q (use cq/cbr/vbr)", rc)
 	}

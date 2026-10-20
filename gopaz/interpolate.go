@@ -31,6 +31,7 @@ type InterpJob struct {
 	Threads              int
 	Overlap              int
 	Provider             Provider
+	VideoDevice          string
 	Device               string
 	StartFrame, EndFrame int
 	Encode               EncodeOptions
@@ -128,7 +129,7 @@ func RunInterpolate(job InterpJob) error {
 		}
 	}
 
-	dec, err := NewVideoDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End)
+	dec, err := NewVideoDecoder(job.Ffmpeg, job.Input, fw, fh, fr.Start, fr.End, job.VideoDevice)
 	if err != nil {
 		return err
 	}
@@ -254,6 +255,12 @@ func RunInterpolate(job InterpJob) error {
 		u0 = u1
 	}
 	ProgressDone()
+	if dec.Frames() == 0 {
+		writer.Close()
+		enc.Close()
+		os.Remove(tmpVideo)
+		return fmt.Errorf("decoder produced no frames; try another video engine or software decoding; ffmpeg: %s", dec.Stderr())
+	}
 	if err := writer.Close(); err != nil {
 		enc.Close()
 		if se := enc.Stderr(); se != "" {
