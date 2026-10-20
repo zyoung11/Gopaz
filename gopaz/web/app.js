@@ -2109,6 +2109,7 @@ function loadPreview(job) {
         const out = processedDuration();
         const span = previewSourceSpan();
         const original = $("#videoOriginal");
+        processed.playbackRate = 1;
         original.playbackRate = out > 0 && span > 0 ? span / out : 1;
         original.currentTime = state.preview.start;
         processed.currentTime = 0;
