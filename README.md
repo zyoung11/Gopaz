@@ -1,6 +1,6 @@
 # Gopaz
 
-Reverse-engineered local inference for Topaz Video AI in pure Go — upscale, restore and slow motion with a web UI.
+Reverse-engineered local inference for Topaz Video AI in pure Go.
 
 [中文](README_CN.md)
 
