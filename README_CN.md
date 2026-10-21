@@ -1,6 +1,6 @@
 # Gopaz
 
-用纯 Go 逆向实现 Topaz Video AI 的本地推理，支持超分、修复、慢放，带本地 Web 界面。
+用纯 Go 逆向实现 Topaz Video AI 的本地推理。
 
 [English](README.md) | 中文
 
