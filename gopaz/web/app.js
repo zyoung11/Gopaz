@@ -314,7 +314,6 @@ const state = {
     scale: 2,
     factor: 2,
     sensitivity: 10,
-    logHeight: 0,
     autoParams: false,
     params: {},
     modelParams: {},
@@ -1082,7 +1081,6 @@ function buildSettings() {
     endFrame: req.endFrame,
     instances: numberFrom("#instancesInput", 0),
     sensitivity: req.sensitivity,
-    logHeight: state.settings.logHeight || Math.round($("#logPanel").getBoundingClientRect().height),
     logOpen: !$("#logWrap").hidden,
     rdt: req.rdt,
   };
@@ -1153,10 +1151,6 @@ function applySettings(app) {
   $("#sceneInput").value = s.sceneThreshold ?? 6.5;
   $("#startInput").value = s.startFrame ?? -1;
   $("#endInput").value = s.endFrame ?? -1;
-  if (s.logHeight) {
-    state.settings.logHeight = s.logHeight;
-    $("#logPanel").style.height = `${s.logHeight}px`;
-  }
 }
 
 async function pickInput() {

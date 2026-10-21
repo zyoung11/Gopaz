@@ -1,288 +1,197 @@
-<div align="center">
-<pre>
-  ░██████                                              
- ░██   ░██                                             
-░██         ░███████  ░████████   ░██████   ░█████████ 
-░██  █████ ░██    ░██ ░██    ░██       ░██       ░███  
-░██     ██ ░██    ░██ ░██    ░██  ░███████     ░███    
- ░██  ░███ ░██    ░██ ░███   ░██ ░██   ░██   ░███      
-  ░█████░█  ░███████  ░██░█████   ░█████░██ ░█████████ 
-                      ░██                              
-                      ░██                              </pre>
-</div>
+# Gopaz
 
+Reverse-engineered local inference for Topaz Video AI in pure Go — upscale, restore and slow motion with a web UI.
 
-Gopaz 是 Topaz Video AI 的本地推理工具，提供命令行和本地 Web 界面。输入视频，用本地 GPU 做超分/修复或慢放/插帧。纯 Go 实现，无 cgo、无 C 编译器、无 Python。
+[中文](README_CN.md)
 
-当前支持 Windows x64。
+<p align="center">
+  <img src="images/web-ui.jpg" alt="Gopaz web UI showing an Aion 10x side-by-side comparison" width="100%">
+</p>
+<p align="center"><sub>Aion 10x slow motion with side-by-side comparison and live logs</sub></p>
 
-## 功能
+Gopaz runs Topaz Video AI models locally on Windows. The core is pure Go: no cgo, no C compiler and no Python. The ONNX Runtime C API is bound directly through `syscall`, and video I/O uses ffmpeg subprocesses.
 
-| 命令 | 说明 |
-|---|---|
-| `gopaz` | 启动本地 Web 界面 |
-| `gopaz serve` | 只启动 Web 界面 |
-| `gopaz upscale` | 超分（2x/4x）或修复（1x） |
-| `gopaz interpolate` | 慢放/插帧（2-16 倍） |
-| `gopaz prepare` | 把 `.tz` 解压成明文 `.onnx` |
-| `gopaz models` | 列出可用模型 |
-| `gopaz encoders` | 列出可用编码器 |
-| `gopaz devices` | 列出 CUDA、DirectML 和 OpenVINO 设备 |
-| `gopaz help` / `gopaz -v` | 帮助（`-h`、`--help`）/ 版本（`--version`、`-V`） |
+## Features
 
-| 模型 | 类型 | 倍率 | 参数 |
+- **Local web UI** — import a video, preview a short range, compare the original and processed video side by side or with a divider, loop playback, and follow progress, speed, ETA and live logs.
+- **Enhancement** — Proteus with six parameters and automatic per-frame parameter prediction; Gaia and Gaia-CG for live action and computer-generated content. 1x, 2x and 4x.
+- **Interpolation** — Apollo and Aion, from 2x to 16x slow motion, with scene-aware windowing and duplicate-frame replacement.
+- **Backends** — CUDA, TensorRT and DirectML on GPU, OpenVINO on GPU or NPU, plus CPU fallback. The inference backend is independent of the video encoder.
+- **Encoding** — NVIDIA NVENC and Intel Quick Sync H.264/H.265, plus software H.264, VP9 and FFV1; audio copy, AAC, AC3, PCM or Vorbis. Slow-motion audio is retimed automatically.
+- **Portable** — one executable plus optional runtime and model packs. Missing backends and models are simply hidden from the UI; add the folders and refresh.
+- **Persistence** — model, per-model parameters, backend, encoder, output options and the log panel state are restored from `config.json`.
+
+## Models
+
+| Model | Task | Scale or factor | Notes |
 |---|---|---|---|
-| proteus | 增强 | 1/2/4 | 6 |
-| gaia / gaia-cg | 增强 | 1/2/4 | 无 |
-| apollo | 插帧 | 2-16 | 无 |
-| aion | 插帧 | 2-16 | 无 |
+| Proteus | Enhance | 1x / 2x / 4x | Six parameters plus Auto parameter estimation |
+| Gaia | Enhance | 1x / 2x / 4x | High quality, live action |
+| Gaia-CG | Enhance | 1x / 2x / 4x | Computer-generated content |
+| Apollo | Interpolate | 2x–16x | Up to 8 subframes per inference |
+| Aion | Interpolate | 2x–16x | 16 subframes, two-stage inference |
 
-## 下载
+Gopaz implements these five models. Other Topaz models such as Nyx, Iris, Rhea, Theia and Artemis are not yet supported. See [ARCHITECTURE.md](ARCHITECTURE.md) for the inference pipeline.
 
-到 [Releases](https://github.com/zyoung11/Gopaz/releases) 按需下载资源，全部解压到同一个目录即可使用：
+## Download
 
-| 资源 | 需要它的场景 |
-|---|---|
-| `gopaz.exe` | 必需 |
-| `ffmpeg.zip` | 必需 |
-| `runtime/NVIDIA/CUDA.zip` | CUDA / TensorRT / CPU |
-| `runtime/NVIDIA/Compute.zip` | CUDA / TensorRT；系统已装 CUDA Toolkit + cuDNN 可省 |
-| `runtime/NVIDIA/TensorRT.zip` | 仅 TensorRT |
-| `runtime/DirectML.zip` | 仅 DirectML |
-| `runtime/OpenVINO.zip` | 仅 OpenVINO |
-| `models/*.zip` | 按模型拆分，下载要用的即可 |
+Grab `gopaz.exe` and the packs you need from [Releases](https://github.com/zyoung11/Gopaz/releases/latest). There is no installer; build the portable folder as shown below.
 
-## 依赖
+| Asset | Location | Required for |
+|---|---|---|
+| `gopaz.exe` | Gopaz folder | everything |
+| `ffmpeg.zip` | Gopaz folder | everything |
+| `CUDA.zip` | `runtime/NVIDIA/` | CUDA, TensorRT and CPU |
+| `Compute.zip` | `runtime/NVIDIA/` | CUDA and TensorRT; optional when the CUDA Toolkit and cuDNN are on `PATH` |
+| `TensorRT.zip` | `runtime/NVIDIA/` | TensorRT; optional when TensorRT is on `PATH` |
+| `DirectML.zip` | `runtime/` | DirectML |
+| `OpenVINO.zip` | `runtime/` | OpenVINO |
+| `proteus.zip` | `models/` | Proteus |
+| `gaia-1.zip` | `models/` | Gaia-CG |
+| `gaia-2.zip` | `models/` | Gaia |
+| `apollo-1.zip`, `apollo-2.zip` | `models/` | Apollo; both cover all tile sizes |
+| `aion.zip` | `models/` | Aion |
 
-1. **ffmpeg / ffprobe**：优先使用可执行文件同目录或 `bin/` 下的版本，其次 PATH，也可以用 `--ffmpeg`/`--ffprobe` 指定。
-2. **ONNX Runtime**：CUDA/TensorRT 使用 API 31 的运行时；DirectML 和 OpenVINO 使用 API 24 的运行时。运行时目录结构见下面的便携目录。
-3. **模型文件**：放在 `models/`，或用 `GOPAZ_MODEL_DIR` 指定；支持明文 `.onnx` 和加密 `.tz`，同名时优先 `.onnx`。
-4. **CUDA + cuDNN**：CUDA/TensorRT 需要。优先使用可执行文件同目录 `runtime/` 中的运行库，否则需要在系统 PATH 上。
-5. **可选后端**：TensorRT、DirectML、OpenVINO 分别需要对应的运行时目录；缺少时只影响对应 provider。
+CUDA also needs the NVIDIA driver. `CUDA.zip` contains the ONNX Runtime build with the CUDA and TensorRT execution providers; `Compute.zip` contains the CUDA math libraries and cuDNN. TensorRT, DirectML and OpenVINO each add one runtime folder. The CPU provider can use any of these ONNX Runtime builds.
 
-## 便携目录
-
-可以把程序、运行时和模型放在同一个目录，直接运行，不需要安装。完整的文件组织结构：
+The folder layout after extraction:
 
 ```
 Gopaz/
-├─ gopaz.exe                        主程序
-├─ config.json                      首次运行自动生成（UI 状态与选项）
-├─ ffmpeg/                          视频解码编码
+├─ gopaz.exe
+├─ config.json              generated on first run
+├─ ffmpeg/
 │  ├─ ffmpeg.exe
 │  └─ ffprobe.exe
-├─ models/                          按模型分四个子目录，明文 .onnx
+├─ models/
 │  ├─ proteus/
-│  │  ├─ prap-v3-fp32-ox.onnx       Auto 参数估计模型
-│  │  ├─ prob-v4-fgnet-fp16-256x352-1x-ox.onnx
-│  │  ├─ prob-v4-fgnet-fp16-288x288-1x-ox.onnx
-│  │  └─ ...
 │  ├─ gaia/
 │  ├─ apollo/
 │  └─ aion/
-├─ runtime/                         按供应商分目录
+├─ runtime/
 │  ├─ NVIDIA/
-│  │  ├─ CUDA/                      ONNX Runtime + CUDA/TensorRT 插件（共用）
-│  │  │  ├─ onnxruntime.dll
-│  │  │  ├─ onnxruntime_providers_cuda.dll
-│  │  │  └─ ...
-│  │  ├─ TensorRT/                  TensorRT 官方运行库
-│  │  └─ Compute/                   CUDA 计算库 + cuDNN
-│  ├─ DirectML/                     ONNX Runtime + DirectML 后端
-│  └─ OpenVINO/                     ONNX Runtime + OpenVINO 后端
-└─ cache/                           自动生成，删除即清缓存
+│  │  ├─ CUDA/
+│  │  ├─ Compute/
+│  │  └─ TensorRT/
+│  ├─ DirectML/
+│  └─ OpenVINO/
+└─ cache/                   generated, safe to delete
 ```
 
-| 路径 | 内容 |
-|---|---|
-| `config.json` | 首次运行自动生成的配置：UI 状态持久化和程序选项（见下） |
-| `cache/` | 自动创建，TensorRT engine、OpenVINO 编译缓存和预览视频（`cache/preview/`）；删除整个文件夹即可清缓存，下次运行重新构建；用 `GOPAZ_CACHE_DIR` 可改到其他位置 |
+## Quick start
 
-查找顺序：
+1. Put `gopaz.exe` and extract `ffmpeg.zip` into an empty folder.
+2. Add a runtime, for example `CUDA.zip` and `Compute.zip` into `runtime/NVIDIA/`.
+3. Extract the model packs you need into `models/`.
+4. Run `gopaz.exe`. The web UI opens at `http://127.0.0.1:8765`.
 
-| 文件 | 查找顺序 |
-|---|---|
-| ffmpeg / ffprobe | 可执行文件同目录 `ffmpeg/`，其次同目录、同目录 `bin/`，最后 PATH |
-| 模型 | `GOPAZ_MODEL_DIR`，其次同目录 `models/<模型>/`，最后旧的平铺 `models/` |
-| ORT | `GOPAZ_ORT_DLL`，其次 `runtime/<供应商>/<后端>/`，最后旧的 `ort-dll/` |
+Select a video, choose a model and settings, then start. Use **Preview** to render a short range at the current playback position, and **Logs** to follow the pipeline.
 
-## 按需下载
+## Usage
 
-运行时和模型都是可选的，缺什么下载什么，把文件夹放到便携目录对应位置即可，程序在启动时自动识别；Web 界面的后端和模型列表只显示实际存在的内容，放好后刷新页面即可。
-
-| 想用 | 必需 | 可省略 |
-|---|---|---|
-| CUDA | `runtime/NVIDIA/CUDA` | `runtime/NVIDIA/Compute`——系统安装的 CUDA Toolkit + cuDNN 在 PATH 上即可 |
-| TensorRT | `runtime/NVIDIA/CUDA` + `runtime/NVIDIA/TensorRT` | `runtime/NVIDIA/Compute` 同上；系统装了 TensorRT 在 PATH 上可省 `NVIDIA/TensorRT` |
-| DirectML | `runtime/DirectML` | — |
-| OpenVINO | `runtime/OpenVINO` | — |
-| CPU | 任意一份 ONNX Runtime | — |
-
-只放 `runtime/NVIDIA/CUDA` 不足以跑 CUDA：ORT 只是调度层，真正做计算的 cuBLAS/cuDNN 必须由 `NVIDIA/Compute` 文件夹或系统安装提供，二选一。
-
-## 配置文件
-
-`config.json` 在首次运行时自动生成在 `gopaz.exe` 同目录，包含程序选项和 UI 状态两部分：
-
-```json
-{
-  "saveState": true,
-  "restoreVideo": true,
-  "previewDuration": 2,
-  "port": 8765,
-  "state": { "lang": "zh", "model": "proteus", "...": "上次的全部选择" }
-}
-```
-
-| 选项 | 默认 | 说明 |
-|---|---|---|
-| `saveState` | `true` | 是否把 UI 状态持续写回本文件，关闭后 state 不再更新 |
-| `restoreVideo` | `true` | 启动时自动加载上次选择的视频，置为 `false` 关闭 |
-| `previewDuration` | `2` | 预览处理的源时长（秒） |
-| `port` | `8765` | Web 端口，`--port` 参数优先于本项 |
-
-`state` 保存使用过程中的全部选择：模型、每个模型各自的参数、倍率/倍数、供应商和设备、编码器、容器、质量、码率控制、音频、线程/显存等高级参数、语言、输出目录、文件名和日志面板开关。下次打开 Web 时自动恢复；切换模型时会恢复该模型上次的参数。
-
-### Proteus Auto
-
-Proteus 的参数面板提供 Auto 开关：开启后由 `models/proteus/prap-v3-fp32-ox.onnx`（参数估计模型）为每一帧自动输出 6 个参数（Antialias/DeBlur、Reduce Noise、Recover Details、Dehalo、Sharpen、Fix Compression），手动滑条被忽略；关闭则完全手动。CLI 用 `--auto 1`。
-
-## 构建
-
-```bash
-go build -ldflags="-s -w" -o gopaz.exe .
-```
-
-Web 前端在 `web/`，通过 `//go:embed` 打包进可执行文件，不需要 Node 或构建步骤。
-
-## CLI
-
-### 超分 / 修复
-
-```bash
-gopaz upscale -i input.mp4 -o output.mp4 --model proteus --scale 2 --encoder h264-main-sw
-```
-
-- `--model`：`proteus`、`gaia`、`gaia-cg`
-- `--scale`：`1`（修复）、`2`、`4`
-- Proteus 参数：`--denoise`、`--detail`、`--dehalo`、`--sharpen`、`--fix-compression`、`--deblur`，取值 -100 到 100
-- `--kcolor 1`：keepColor 色彩校正
-- `--scene-threshold 6.5`：场景切换阈值
-
-### 慢放 / 插帧
-
-```bash
-gopaz interpolate -i input.mp4 -o output.mp4 --model apollo --factor 4
-gopaz interpolate -i input.mp4 -o output.mp4 --model aion --factor 8 --sensitivity 65
-```
-
-- `--model`：`apollo`、`aion`
-- `--factor`：`2`、`3`、`4`、`6`、`8`、`10`、`12`、`16`
-- `--sensitivity 10`：重复帧替换灵敏度 0 到 100，0 关闭
-- `--rdt -1`：原始重复帧阈值覆盖，-1 表示使用 `--sensitivity`
-- 慢放输出保持源 FPS，帧数和时长都是 N 倍，音频按同一倍率减速
-
-### 通用选项
-
-| 选项 | 说明 |
-|---|---|
-| `--provider cuda / tensorrt / dml / openvino / cpu` | 推理后端 |
-| `--device <id>` | CUDA/TensorRT/DML 设备索引，或 OpenVINO `GPU.0`/`GPU.1`/`NPU`/`CPU` |
-| `--video-device <name>` | 视频解码引擎：`sw` 软件（默认）、`cuda` NVDEC、`qsv` Intel Quick Sync，不影响推理设备 |
-| `--gpu <id>` | -2 自动，-1 CPU；`--device` 省略时作为设备号兜底 |
-| `--threads <n>` | 推理线程数 |
-| `--workers <n>` | 并行 worker 数，0 自动 |
-| `--instances <n>` | 插值并发会话数，0 自动 |
-| `--overlap <px>` | 分块重叠，0 自动 |
-| `--vram <GB>` | 每会话显存上限，0 自动 |
-| `--gpu-vram <GB>` | Aion tile 预算，0 自动 |
-| `--start <frame>`、`--end <frame>` | 只处理指定帧范围，音轨同步裁剪 |
-| `--ffmpeg <path>`、`--ffprobe <path>` | 指定可执行文件路径 |
-
-### 推理后端
-
-| Provider | 设备 | 说明 |
-|---|---|---|
-| `cuda` | NVIDIA GPU | 默认后端，使用 CUDA 运行时 |
-| `tensorrt` | NVIDIA GPU | 首次为每个模型和输入尺寸构建 engine，之后复用缓存 |
-| `dml` | Direct3D 12 适配器 | 使用 DirectML 运行时，设备索引见 `gopaz devices` |
-| `openvino` | Intel GPU / NPU / CPU | GPU 和 NPU 默认 FP16，CPU 使用 FP32；NPU 自动限制 tile ≤576x672，编译失败立即报错；Aion 不支持 NPU |
-
-默认后端是 CUDA；非 NVIDIA 环境请显式选择 `--provider dml` 或 `--provider openvino`。
-
-### 输出设置
-
-```bash
---encoder h264-main-sw          # 见 gopaz encoders
---quality High                  # High/Mid/Low
---rate-control cq               # cq/cbr/vbr
---bitrate 20                    # cbr/vbr 码率 Mbps
---audio-codec copy              # copy/aac/ac3/pcm/vorbis/none
---audio-bitrate 320             # 音频码率 kbps
-```
-
-自动命名：`<输入名>_<模型缩写><版本>`（如 `_prob4`、`_ghq5`、`_apo8`、`_aion1`），连续处理时累加标签（如 `_ghq5_apo8`），重名时在名字后追加 `(N)`。
-
-编码器与推理后端相互独立。默认 `auto` 会探测 NVENC：可用时用 H.265 NVENC，否则回退到软件 H.264。NVENC 编码器需要 NVIDIA GPU；其他环境也可以用 `--encoder` 手动选择 `h264-main-sw`、`vp9-best` 或 FFV1。
-
-## Web 界面
+### Web UI
 
 ```bash
 gopaz
-```
-
-默认监听 `http://127.0.0.1:8765` 并自动打开浏览器。端口被占用时会自动顺延，也可以手动指定：
-
-```bash
 gopaz serve --port 9000 --no-open
 ```
 
-在界面中选择视频、模型、倍率、参数和输出目录，然后开始处理。界面支持取消任务、查看进度和日志，以及从当前位置生成两秒预览。DirectML 的设备下拉框显示 DXGI 适配器名称；OpenVINO 显示设备类型。
+The UI provides native file and folder pickers, per-model settings, encoder and audio options, frame ranges, task cancel, progress with speed and ETA, live logs, and preview/compare modes. One task runs at a time; the CLI remains available.
 
-Web 界面一次只运行一个任务；CLI 的全部功能仍然可用。
+Settings, per-model parameters and the log panel state are saved to `config.json` next to `gopaz.exe`. Selecting a model restores its own parameters.
 
-## 缓存与首次运行
+### CLI
 
-- TensorRT 第一次为每个模型和输入尺寸构建 engine，之后从缓存加载。换分辨率或改变 tile 尺寸会重新构建。
-- OpenVINO 在创建会话时编译模型并写入缓存；NPU 的首次编译通常比 GPU 更慢。Aion 在 OpenVINO 上会把输入尺寸固定为当前 tile，换 tiling 尺寸会重新编译。
-- DirectML 没有持久编译缓存，每次进程启动都会重新创建会话。
-- 首次构建/编译可能需要数十秒到数分钟，取决于模型和硬件；日志会显示构建或编译阶段。
-
-缓存默认放在可执行文件旁的 `cache/`，可执行目录不可写时回退到系统用户缓存目录。Web 界面的预览视频保存在 `cache/preview/`，会话内保留，每次启动 Web 界面时清空。也可以把缓存放到便携目录，例如：
-
-```powershell
-$env:GOPAZ_CACHE_DIR = "cache"
-gopaz upscale ...
-```
-
-## 环境变量
-
-| 变量 | 说明 |
+| Command | Purpose |
 |---|---|
-| `GOPAZ_MODEL_DIR` | 模型目录 |
-| `GOPAZ_ORT_DLL` | onnxruntime.dll 路径 |
-| `GOPAZ_CACHE_DIR` | 缓存目录；相对路径相对于当前工作目录 |
-| `GOPAZ_CUDNN_ALGO` | cuDNN 卷积算法：`exhaustive`、`heuristic`、`default` |
-| `GOPAZ_DEBUG=1` | 输出诊断信息 |
-| `GOPAZ_PROGRESS=json` | 以 JSON 行输出日志和进度 |
+| `gopaz upscale` | Upscale or restore a video |
+| `gopaz interpolate` | Slow motion or frame interpolation |
+| `gopaz prepare` | Convert `.tz` models to plain `.onnx` |
+| `gopaz models` | List installed models |
+| `gopaz encoders` | List available encoders |
+| `gopaz devices` | List CUDA, DirectML and OpenVINO devices |
+| `gopaz help` | Show all options |
+| `gopaz -v` | Show the version |
 
-## 测试
+Examples:
 
 ```bash
-go test .
+gopaz upscale -i input.mp4 -o output.mp4 --model proteus --scale 2 --encoder h264-main-sw
+gopaz interpolate -i input.mp4 -o output.mp4 --model aion --factor 4 --sensitivity 65
 ```
 
-端到端测试默认跳过，需要模型目录和 ONNX Runtime。未设置 `GOPAZ_MODEL_DIR` 或 `GOPAZ_ORT_DLL` 时会尝试 `portable/models`、`ort-dll/` 和 `portable/ort-dll/`。
+Proteus parameters are `--deblur`, `--denoise`, `--detail`, `--dehalo`, `--sharpen` and `--fix-compression`, each ranging from -100 to 100. `--auto` lets the parameter model choose them per frame; manual values are ignored. Interpolation uses `--factor`, `--sensitivity` and `--rdt`.
+
+Common options:
+
+| Option | Description |
+|---|---|
+| `--provider cuda / tensorrt / dml / openvino / cpu` | Inference backend |
+| `--device <id>` | Device index, or OpenVINO `GPU.0` / `GPU.1` / `NPU` / `CPU` |
+| `--video-device sw / cuda / qsv` | Video decoder: software, NVDEC or Quick Sync |
+| `--encoder <id>` | Encoder from `gopaz encoders`; auto by default |
+| `--quality`, `--rate-control`, `--bitrate`, `--qp` | Encoding quality and rate control |
+| `--start`, `--end` | Process a frame range |
+| `--ffmpeg`, `--ffprobe` | Override tool paths |
+
+Run `gopaz help` for the full list, including threads, workers, VRAM limits, tiling overlap and audio options.
+
+Output files are named `<input>_<model tag>` by default, for example `_prob4`, `_ghq5`, `_gcg5`, `_apo8` or `_aion1`. Existing files get a `(N)` suffix.
+
+## Configuration
+
+`config.json` is created next to the executable on first run.
+
+| Option | Default | Description |
+|---|---|---|
+| `saveState` | `true` | Persist UI state |
+| `restoreVideo` | `true` | Reload the last video on startup |
+| `previewDuration` | `2` | Source seconds rendered by Preview |
+| `port` | `8765` | Web port; `--port` overrides it |
+
+The `state` object stores the current model, backend and device, encoder, output settings, language, per-model parameters, and the log panel's open state. Use the UI settings; manual editing is not required.
+
+Environment variables:
+
+| Variable | Description |
+|---|---|
+| `GOPAZ_MODEL_DIR` | Model directory |
+| `GOPAZ_ORT_DLL` | Path to `onnxruntime.dll` |
+| `GOPAZ_CACHE_DIR` | Cache directory; relative paths use the working directory |
+| `GOPAZ_CONFIG` | Override the `config.json` path |
+| `GOPAZ_CUDNN_ALGO` | cuDNN convolution algorithm: `exhaustive`, `heuristic` or `default` |
+| `GOPAZ_DEBUG=1` | Diagnostic logs |
+| `GOPAZ_PROGRESS=json` | JSON-lines logs and progress |
+
+TensorRT engines and OpenVINO compiled models are cached under `cache/tensorrt/` and `cache/openvino/`. The first run for a model and tile shape can take minutes; later runs reuse the cache. Delete `cache/` to rebuild. Preview videos live in `cache/preview/` and are cleared when the web UI starts.
+
+## Building from source
+
+```bash
+git clone https://github.com/zyoung11/Gopaz.git
+cd Gopaz/gopaz
+go build -ldflags="-s -w" .
+go test ./...
+```
+
+The web UI is embedded with `//go:embed`; no Node.js or separate frontend build is needed. Optional end-to-end tests need ffmpeg, model files and ONNX Runtime:
 
 ```bash
 GOPAZ_E2E=1 go test . -run E2E -v
-GOPAZ_E2E=1 GOPAZ_E2E_GPU=1 GOPAZ_E2E_AION=1 go test . -run TestE2EAionDuplicate -v
 ```
 
-## 许可证
+## Limitations
 
-[MIT](LICENSE)
+- Windows x64 only.
+- The pipeline is RGB24 end to end; 10-bit and YUV output are not implemented.
+- Apollo 10/12/16 subframe reuse and exact Topaz duplicate-frame boundaries are approximations.
+- TensorRT and DirectML use one session and one worker; OpenVINO supports concurrent runs.
+- Performance depends on the GPU, driver, runtime version and model size.
 
-## 声明
+See [ARCHITECTURE.md](ARCHITECTURE.md) for backends, tiling, color handling, failure modes and known limits.
 
-`.tz` 模型来自本机安装的 Topaz Video AI，仅用于本机/个人使用，请勿再分发。用 `gopaz prepare` 生成的明文 `.onnx` 同样不要分发。
+## License
+
+Code is released under the [MIT License](LICENSE).
+
+Gopaz is not affiliated with Topaz Labs. Model files, including `.tz` files and `.onnx` files produced by `gopaz prepare`, belong to Topaz and are not covered by this license; use them only on your own machine and do not redistribute them.

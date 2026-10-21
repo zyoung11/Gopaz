@@ -46,7 +46,6 @@ type AppState struct {
 	Instances      int                           `json:"instances"`
 	Sensitivity    int                           `json:"sensitivity"`
 	RDT            float64                       `json:"rdt"`
-	LogHeight      int                           `json:"logHeight"`
 	LogOpen        bool                          `json:"logOpen"`
 }
 
