@@ -75,3 +75,35 @@ func TestCacheRootPortable(t *testing.T) {
 		t.Fatalf("cache directory not created: %v", err)
 	}
 }
+
+func TestTRTEngineCached(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GOPAZ_CACHE_DIR", root)
+	dir := filepath.Join(root, "tensorrt")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	model := filepath.Join("models", "aion-v1-fp16-ox.onnx")
+	if trtEngineCached(model) {
+		t.Fatal("empty cache reported cached")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other_123_0_fp16_sm120.engine"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if trtEngineCached(model) {
+		t.Fatal("unrelated engine reported cached")
+	}
+	engine := filepath.Join(dir, "aion-v1-fp16-ox_123_0_fp16_sm120.engine")
+	if err := os.WriteFile(engine, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if !trtEngineCached(model) {
+		t.Fatal("cached engine not detected")
+	}
+	if err := os.WriteFile(engine, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if trtEngineCached(model) {
+		t.Fatal("empty engine reported cached")
+	}
+}

@@ -10,52 +10,54 @@ import (
 
 // AppState holds the persisted UI selections.
 type AppState struct {
-	Lang           string             `json:"lang"`
-	Input          string             `json:"input"`
-	OutputDir      string             `json:"outputDir"`
-	OutputName     string             `json:"outputName"`
-	CustomName     bool               `json:"customName"`
-	Mode           string             `json:"mode"`
-	Model          string             `json:"model"`
-	Scale          int                `json:"scale"`
-	Factor         int                `json:"factor"`
-	Params         map[string]float64 `json:"params"`
-	Provider       string             `json:"provider"`
-	Device         string             `json:"device"`
-	VideoDevice    string             `json:"videoDevice"`
-	GPU            int                `json:"gpu"`
-	Encoder        string             `json:"encoder"`
-	Container      string             `json:"container"`
-	Quality        string             `json:"quality"`
-	RateControl    string             `json:"rateControl"`
-	Bitrate        int                `json:"bitrate"`
-	QP             int                `json:"qp"`
-	AudioCodec     string             `json:"audioCodec"`
-	AudioBitrate   int                `json:"audioBitrate"`
-	Threads        int                `json:"threads"`
-	Workers        int                `json:"workers"`
-	VramGB         float64            `json:"vram"`
-	DeviceVRAMGB   float64            `json:"gpuVram"`
-	Overlap        int                `json:"overlap"`
-	KColor         int                `json:"kcolor"`
-	Auto           bool               `json:"auto"`
-	SceneThreshold float64            `json:"sceneThreshold"`
-	StartFrame     int                `json:"startFrame"`
-	EndFrame       int                `json:"endFrame"`
-	Instances      int                `json:"instances"`
-	Sensitivity    int                `json:"sensitivity"`
-	RDT            float64            `json:"rdt"`
-	LogHeight      int                `json:"logHeight"`
+	Lang           string                        `json:"lang"`
+	Input          string                        `json:"input"`
+	OutputDir      string                        `json:"outputDir"`
+	OutputName     string                        `json:"outputName"`
+	CustomName     bool                          `json:"customName"`
+	Mode           string                        `json:"mode"`
+	Model          string                        `json:"model"`
+	Scale          int                           `json:"scale"`
+	Factor         int                           `json:"factor"`
+	Params         map[string]float64            `json:"params"`
+	ModelParams    map[string]map[string]float64 `json:"modelParams"`
+	Provider       string                        `json:"provider"`
+	Device         string                        `json:"device"`
+	VideoDevice    string                        `json:"videoDevice"`
+	GPU            int                           `json:"gpu"`
+	Encoder        string                        `json:"encoder"`
+	Container      string                        `json:"container"`
+	Quality        string                        `json:"quality"`
+	RateControl    string                        `json:"rateControl"`
+	Bitrate        int                           `json:"bitrate"`
+	QP             int                           `json:"qp"`
+	AudioCodec     string                        `json:"audioCodec"`
+	AudioBitrate   int                           `json:"audioBitrate"`
+	Threads        int                           `json:"threads"`
+	Workers        int                           `json:"workers"`
+	VramGB         float64                       `json:"vram"`
+	DeviceVRAMGB   float64                       `json:"gpuVram"`
+	Overlap        int                           `json:"overlap"`
+	KColor         int                           `json:"kcolor"`
+	Auto           bool                          `json:"auto"`
+	SceneThreshold float64                       `json:"sceneThreshold"`
+	StartFrame     int                           `json:"startFrame"`
+	EndFrame       int                           `json:"endFrame"`
+	Instances      int                           `json:"instances"`
+	Sensitivity    int                           `json:"sensitivity"`
+	RDT            float64                       `json:"rdt"`
+	LogHeight      int                           `json:"logHeight"`
+	LogOpen        bool                          `json:"logOpen"`
 }
 
 // AppConfig is the persistent application configuration stored in config.json
 // next to the executable.
 type AppConfig struct {
-	SaveState        bool     `json:"saveState"`
-	RestoreVideo     bool     `json:"restoreVideo"`
-	PreviewDuration  float64  `json:"previewDuration"`
-	Port             int      `json:"port"`
-	State            AppState `json:"state"`
+	SaveState       bool     `json:"saveState"`
+	RestoreVideo    bool     `json:"restoreVideo"`
+	PreviewDuration float64  `json:"previewDuration"`
+	Port            int      `json:"port"`
+	State           AppState `json:"state"`
 }
 
 var appCfgMu sync.Mutex
@@ -69,7 +71,7 @@ func defaultAppConfig() AppConfig {
 		Port:            8765,
 		State: AppState{
 			Lang: "en", Model: "proteus", Mode: "enhance",
-			Scale: 2, Factor: 2, Params: map[string]float64{},
+			Scale: 2, Factor: 2, Params: map[string]float64{}, ModelParams: map[string]map[string]float64{},
 			Provider: "cuda", GPU: -2,
 			Quality: "High", RateControl: "cq", Bitrate: 20,
 			AudioCodec: "copy", AudioBitrate: 320,

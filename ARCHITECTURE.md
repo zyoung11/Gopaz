@@ -253,7 +253,7 @@ DirectML 的 `device_id` 对应 `IDXGIFactory::EnumAdapters` 的顺序，`gopaz 
 
 设备选择：四个后端在 Web 的 Compute 面板都提供设备下拉，`--device` 优先于 `--gpu`；CUDA/TensorRT/DML 使用数字索引（`gopaz devices` 的 ID 列），OpenVINO 使用 `GPU.0`/`NPU`/`CPU`。`--gpu` 仅在 `--device` 省略时作为设备号兜底，`-1` 强制 CPU；空闲显存探测和 worker 自动值跟随最终选定的设备。
 
-配置与状态：`config.json` 位于可执行文件旁，首次运行自动写入完整默认值（`GOPAZ_CONFIG` 可改路径）。文件包含程序选项（`saveState`、`restoreVideo`、`port`）和 `state`（全部 UI 选择，含语言、模型和参数、后端和设备、编码和音频、高级参数、输出目录和文件名）。Web 客户端在控件变化后 700ms 防抖调用 `POST /api/settings` 持久化，页面关闭时用 sendBeacon 兜底，`/api/config` 的 `app` 段用于启动恢复。`saveState` 为 false 时不写入 state；`restoreVideo` 默认开启，启动时自动加载上次的视频；`--port` 省略时使用配置里的 `port`。
+配置与状态：`config.json` 位于可执行文件旁，首次运行自动写入完整默认值（`GOPAZ_CONFIG` 可改路径）。文件包含程序选项（`saveState`、`restoreVideo`、`port`）和 `state`（全部 UI 选择，含语言、模型和每个模型各自的参数、后端和设备、编码和音频、高级参数、输出目录、文件名、日志面板开关和高度）。Web 客户端在控件变化后 700ms 防抖调用 `POST /api/settings` 持久化，页面关闭时用 sendBeacon 兜底，`/api/config` 的 `app` 段用于启动恢复。`params` 保留当前模型的参数，`modelParams` 按模型键保存各自参数；加载旧配置时会把 `params` 迁移到当前模型。`saveState` 为 false 时不写入 state；`restoreVideo` 默认开启，启动时自动加载上次的视频；`--port` 省略时使用配置里的 `port`。
 
 ## 5. ONNX 图修补
 

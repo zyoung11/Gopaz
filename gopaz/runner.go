@@ -73,6 +73,8 @@ type Runner struct {
 	mainNanos   int64
 	mergeNanos  int64
 	workers     int
+	// trtCached reports whether TensorRT engine cache files exist for this model.
+	trtCached bool
 }
 
 // outputName returns the tensor name of the model's first output.
@@ -287,7 +289,11 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if m.Key == "aion" && provider == ProviderOpenVINO {
 		so.FreeDims = aionFreeDims(tw, th, true)
 	}
-	if provider == ProviderTensorRT || provider == ProviderOpenVINO {
+	trtCached := provider == ProviderTensorRT && trtEngineCached(modelPath)
+	if trtCached && bottomPath != "" {
+		trtCached = trtEngineCached(bottomPath)
+	}
+	if provider == ProviderOpenVINO || (provider == ProviderTensorRT && !trtCached) {
 		Phase("compile")
 		defer Phase("")
 	}
@@ -300,7 +306,11 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 		}
 	}
 	if provider == ProviderTensorRT {
-		Infof("Preparing TensorRT engine for %s; the first run per tile shape may take several minutes", trtCachePrefix(modelPath))
+		if trtCached {
+			Infof("Preparing TensorRT engine for %s", trtCachePrefix(modelPath))
+		} else {
+			Infof("Preparing TensorRT engine for %s; the first run per tile shape may take several minutes", trtCachePrefix(modelPath))
+		}
 	}
 	env, err := NewEnv()
 	if err != nil {
@@ -406,7 +416,7 @@ func LoadRunner(cfg UpscaleConfig) (*Runner, error) {
 	if sceneThreshold <= 0 {
 		sceneThreshold = DefaultSceneChangeThreshold
 	}
-	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), autoSess: autoSess, sceneThreshold: sceneThreshold, overlap: overlap, pool: pool, bottomPool: bpool, workers: nWorkers}
+	r := &Runner{cfg: cfg, sess: sess, tileH: th, tileW: tw, inputs: inputs, outputs: outputs, paramVec: make([]float64, 6), autoSess: autoSess, sceneThreshold: sceneThreshold, overlap: overlap, pool: pool, bottomPool: bpool, workers: nWorkers, trtCached: trtCached}
 	if len(bpool) > 0 {
 		r.bottomOutType = Float
 		if bo, err := bpool[0].Outputs(); err == nil && len(bo) > 0 {
@@ -802,6 +812,26 @@ func cacheRoot() string {
 func trtCachePrefix(path string) string {
 	base := filepath.Base(path)
 	return strings.TrimSuffix(base, filepath.Ext(base))
+}
+
+// trtEngineCached reports whether a non-empty TensorRT engine cache file
+// exists for the model path.
+func trtEngineCached(modelPath string) bool {
+	prefix := trtCachePrefix(modelPath) + "_"
+	entries, err := os.ReadDir(filepath.Join(cacheRoot(), "tensorrt"))
+	if err != nil {
+		return false
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".engine") {
+			continue
+		}
+		if info, ierr := e.Info(); ierr == nil && info.Size() > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // aionFreeDims returns the fixed Aion dimensions for the current tile.

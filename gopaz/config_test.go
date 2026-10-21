@@ -51,3 +51,22 @@ func TestSaveAppStateRespectsFlag(t *testing.T) {
 		t.Fatalf("state not saved: %+v", got.State)
 	}
 }
+
+func TestSaveAppStateModelParams(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv("GOPAZ_CONFIG", path)
+	saveAppState(AppState{
+		Model: "proteus",
+		ModelParams: map[string]map[string]float64{
+			"proteus": {"denoise": 12, "detail": -3},
+		},
+		LogOpen: true,
+	})
+	got := loadAppConfig().State
+	if !got.LogOpen {
+		t.Fatal("log panel state was not saved")
+	}
+	if got.ModelParams["proteus"]["denoise"] != 12 || got.ModelParams["proteus"]["detail"] != -3 {
+		t.Fatalf("model params = %+v", got.ModelParams)
+	}
+}

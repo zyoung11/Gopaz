@@ -317,6 +317,7 @@ const state = {
     logHeight: 0,
     autoParams: false,
     params: {},
+    modelParams: {},
   },
   busy: false,
   picking: false,
@@ -574,11 +575,22 @@ function renderFilters() {
   $$(".filter-item").forEach((el) => el.classList.toggle("active", el.dataset.model === state.model));
 }
 
+function paramsForModel(key) {
+  const all = state.settings.modelParams;
+  let params = all[key];
+  if (!params) {
+    params = {};
+    all[key] = params;
+  }
+  return params;
+}
+
 function selectModel(key, sync = true) {
   const model = state.config.models.find((m) => m.key === key);
   if (!model) return;
   state.model = key;
   state.mode = model.kind;
+  state.settings.params = paramsForModel(key);
 
   if (model.kind === "enhance") {
     if (!model.scales.includes(state.settings.scale)) {
@@ -1045,6 +1057,7 @@ function buildSettings() {
     scale: req.scale,
     factor: req.factor,
     params: req.params,
+    modelParams: state.settings.modelParams,
     provider: req.provider,
     device: req.device,
     videoDevice: state.videoDevice,
@@ -1070,6 +1083,7 @@ function buildSettings() {
     instances: numberFrom("#instancesInput", 0),
     sensitivity: req.sensitivity,
     logHeight: state.settings.logHeight || Math.round($("#logPanel").getBoundingClientRect().height),
+    logOpen: !$("#logWrap").hidden,
     rdt: req.rdt,
   };
 }
@@ -1111,7 +1125,20 @@ function applySettings(app) {
   if (s.factor) state.settings.factor = s.factor;
   if (s.sensitivity !== undefined) state.settings.sensitivity = s.sensitivity;
   state.settings.autoParams = !!s.auto;
-  if (s.params) state.settings.params = s.params;
+  state.settings.modelParams = {};
+  for (const [key, values] of Object.entries(s.modelParams || {})) {
+    if (values && typeof values === "object") {
+      state.settings.modelParams[key] = { ...values };
+    }
+  }
+  if (s.params) {
+    const target = paramsForModel(state.model);
+    for (const [key, value] of Object.entries(s.params)) {
+      if (!(key in target)) target[key] = value;
+    }
+  }
+  state.settings.params = paramsForModel(state.model);
+  $("#logWrap").hidden = !s.logOpen;
   $("#bitrateInput").value = s.bitrate ?? 20;
   $("#audioBitrateInput").value = s.audioBitrate ?? 320;
   $("#gpuSelect").value = String(s.gpu ?? -2);
@@ -1256,17 +1283,13 @@ function renderInput() {
 
 function resetTaskLabels() {
   const track = $("#progressTrack");
-  const fill = $("#progressFill");
   track.classList.remove("indeterminate");
   track.classList.remove("done");
   barPct = 0;
   barRate = 0;
   barReal = 0;
   barLast = 0;
-  fill.style.transition = "none";
-  fill.style.width = "0%";
-  void fill.offsetWidth;
-  fill.style.transition = "";
+  setProgressFill(0);
   $("#progressLabel").textContent = t("task.ready");
   $("#progressValue").textContent = "—";
 }
@@ -1283,7 +1306,7 @@ async function submitJob(req, isPreview) {
   $("#cancelButton").hidden = false;
   $("#cancelButton").disabled = false;
   $("#revealButton").hidden = true;
-  $("#progressFill").style.width = "0%";
+  setProgressFill(0);
   $("#progressTrack").classList.remove("indeterminate");
   $("#progressLabel").textContent = t("task.preparing");
   $("#progressValue").textContent = "…";
@@ -1346,8 +1369,44 @@ let barPct = 0;
 let barRate = 0;
 let barReal = 0;
 let barLast = 0;
+let indetStart = 0;
+
+function progressGeometry() {
+  const w = $("#progressTrack").getBoundingClientRect().width;
+  const cols = Math.floor(w / 5);
+  return { w, cols, usable: cols * 5 };
+}
+
+function setProgressFill(pct) {
+  const fill = $("#progressFill");
+  const { w, cols } = progressGeometry();
+  const value = Number.isFinite(pct) ? clamp(pct, 0, 100) : 0;
+  if (w <= 0 || cols <= 0) {
+    fill.style.width = "0px";
+    return;
+  }
+  const n = value >= 100 ? cols : Math.floor((cols * value) / 100);
+  fill.style.width = `${n * 5}px`;
+}
+
+function animateIndeterminate(now) {
+  const track = $("#progressTrack");
+  const { w, cols } = progressGeometry();
+  if (w <= 0 || cols <= 0) return;
+  if (!indetStart) indetStart = now;
+  const winCols = Math.max(1, Math.round(cols * 0.32));
+  const steps = cols + winCols * 2;
+  const step = Math.floor(((now - indetStart) / 1200) * steps) % steps;
+  track.style.setProperty("--indet-window", `${winCols * 5}px`);
+  track.style.setProperty("--indet-x", `${(step - winCols) * 5}px`);
+}
 
 function tickProgress() {
+  const track = $("#progressTrack");
+  if (track.classList.contains("indeterminate")) {
+    animateIndeterminate(performance.now());
+    return;
+  }
   if (!state.job || state.job.state !== "running") return;
   const now = performance.now();
   const dt = barLast ? Math.min(0.25, (now - barLast) / 1000) : 0;
@@ -1356,7 +1415,7 @@ function tickProgress() {
     barPct += barRate * dt;
     if (barPct < barReal) barPct += (barReal - barPct) * 0.05;
     if (barPct > 99) barPct = 99;
-    $("#progressFill").style.width = `${barPct}%`;
+    setProgressFill(barPct);
   }
 }
 
@@ -1376,7 +1435,7 @@ function updateCompileOverlay(compiling) {
     if (job && job.state === "running" && p && p.phase === "compile") {
       overlay.hidden = false;
     }
-  }, 3500);
+  }, 10000);
 }
 
 function renderJob(job) {
@@ -1396,7 +1455,11 @@ function renderJob(job) {
   if (running) info.push(`${t("task.eta")} ${eta > 0 ? formatDuration(eta) : "—"}`);
   $("#progressValue").textContent = info.join(" · ");
   if (running && total <= 0) {
-    track.classList.add("indeterminate");
+    if (!track.classList.contains("indeterminate")) {
+      indetStart = 0;
+      track.classList.add("indeterminate");
+      animateIndeterminate(performance.now());
+    }
     $("#progressFill").style.width = "";
     $("#progressLabel").textContent = compileShown ? t("compile.title") : `${prefix}${label}`;
   } else {
@@ -1415,7 +1478,7 @@ function renderJob(job) {
   track.classList.toggle("done", job.state === "done");
   if (job.state === "done") {
     barPct = 100;
-    $("#progressFill").style.width = "100%";
+    setProgressFill(100);
     $("#progressLabel").textContent = `${prefix}${t("task.done")}`;
   } else if (job.state === "cancelled") {
     $("#progressLabel").textContent = `${prefix}${t("task.cancelled")}`;
@@ -1493,7 +1556,7 @@ function finishJobUI(job) {
     $("#progressTrack").classList.remove("indeterminate");
     if (job.state === "done") {
       loadPreview(job);
-      $("#progressFill").style.width = "100%";
+      setProgressFill(100);
       $("#progressLabel").textContent = `${t("task.preview")} · ${t("task.done")}`;
       setStatusKey("status.done");
       toast(t("toast.previewReady"));
@@ -1513,7 +1576,7 @@ function finishJobUI(job) {
   $("#revealButton").hidden = job.state !== "done";
   $("#progressTrack").classList.remove("indeterminate");
   if (job.state === "done") {
-    $("#progressFill").style.width = "100%";
+    setProgressFill(100);
     $("#progressLabel").textContent = t("task.done");
     if (job.output) {
       const name = basename(job.output);
@@ -1599,10 +1662,11 @@ async function revealOutput() {
 
 function syncProgressDots() {
   const track = $("#progressTrack");
-  const w = track.clientWidth;
-  if (w > 0) {
-    const cols = Math.max(1, Math.round(w / 5));
-    track.style.setProperty("--dot-pitch", `${w / cols}px`);
+  const { w, usable } = progressGeometry();
+  if (w <= 0) return;
+  track.style.setProperty("--dot-usable", `${usable}px`);
+  if (!track.classList.contains("indeterminate")) {
+    setProgressFill(barPct);
   }
 }
 
