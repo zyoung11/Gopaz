@@ -128,6 +128,9 @@ func cmdServe(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := resetPreviewCache(); err != nil {
+		Warnf("could not reset preview cache: %v", err)
+	}
 	url := fmt.Sprintf("http://127.0.0.1:%d", ln.Addr().(*net.TCPAddr).Port)
 	Infof("Web UI: %s", url)
 	if !*noOpen {
@@ -137,7 +140,6 @@ func cmdServe(args []string) error {
 	}
 
 	srv := &http.Server{Handler: newMux(), ReadHeaderTimeout: 10 * time.Second}
-	defer cleanupPreviewDir()
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	go func() {

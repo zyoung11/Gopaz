@@ -152,9 +152,6 @@ var (
 	jobsMu    sync.Mutex
 	jobs      = map[string]*job{}
 	activeJob *job
-
-	previewMu  sync.Mutex
-	previewDir string
 )
 
 func resolveOutput(req *jobRequest) (*jobPlan, error) {
@@ -329,10 +326,7 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 	start = max(start, 0)
 	end := start + span - 1
 
-	dir, err := os.MkdirTemp("", "gopaz-preview-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create preview folder: %w", err)
-	}
+	dir := previewCacheDir()
 	req.StartFrame = start
 	req.EndFrame = end
 	req.OutputDir = dir
@@ -352,7 +346,6 @@ func planPreview(req *jobRequest) (*jobPlan, error) {
 
 	plan, err := planJob(req)
 	if err != nil {
-		os.RemoveAll(dir)
 		return nil, err
 	}
 	plan.Preview = true
@@ -401,27 +394,18 @@ func choosePreviewEncoder(ffmpeg string, w, h int) string {
 	return "h264-main-sw"
 }
 
-// trackPreviewDir remembers the current preview folder and removes the previous
-// one.
-func trackPreviewDir(dir string) {
-	previewMu.Lock()
-	old := previewDir
-	previewDir = dir
-	previewMu.Unlock()
-	if old != "" && old != dir {
-		os.RemoveAll(old)
-	}
+// previewCacheDir returns the persistent preview folder inside the cache root.
+func previewCacheDir() string {
+	return filepath.Join(cacheRoot(), "preview")
 }
 
-// cleanupPreviewDir removes the current preview folder.
-func cleanupPreviewDir() {
-	previewMu.Lock()
-	dir := previewDir
-	previewDir = ""
-	previewMu.Unlock()
-	if dir != "" {
-		os.RemoveAll(dir)
+// resetPreviewCache clears the persistent preview folder and recreates it.
+func resetPreviewCache() error {
+	dir := previewCacheDir()
+	if err := os.RemoveAll(dir); err != nil {
+		return err
 	}
+	return os.MkdirAll(dir, 0o755)
 }
 
 func estimateTotal(mode string, req *jobRequest, info *VideoInfo) int {
@@ -529,14 +513,8 @@ func handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	jobsMu.Lock()
 	if activeJob != nil && activeJob.isRunning() {
 		jobsMu.Unlock()
-		if plan.Preview {
-			os.RemoveAll(filepath.Dir(plan.OutputPath))
-		}
 		writeError(w, http.StatusConflict, "a job is already running; wait for it to finish or cancel it")
 		return
-	}
-	if plan.Preview {
-		trackPreviewDir(filepath.Dir(plan.OutputPath))
 	}
 	label := "Enhance"
 	if plan.Mode == "interp" {
@@ -724,11 +702,7 @@ func finishJob(j *job, err error) {
 
 	if j.State != "done" {
 		os.Remove(TempVideoPath(j.Output))
-		if j.Preview {
-			os.RemoveAll(filepath.Dir(j.Output))
-		} else {
-			os.Remove(j.Output)
-		}
+		os.Remove(j.Output)
 	}
 }
 

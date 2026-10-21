@@ -59,3 +59,28 @@ func TestOutputTags(t *testing.T) {
 		}
 	}
 }
+
+func TestResetPreviewCache(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("GOPAZ_CACHE_DIR", root)
+	dir := previewCacheDir()
+	if want := filepath.Join(root, "preview"); dir != want {
+		t.Fatalf("previewCacheDir = %q, want %q", dir, want)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "preview.mp4"), []byte("stale"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := resetPreviewCache(); err != nil {
+		t.Fatalf("resetPreviewCache: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("preview cache still has %d entries", len(entries))
+	}
+}
