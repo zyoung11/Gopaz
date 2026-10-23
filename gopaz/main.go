@@ -133,7 +133,7 @@ func usage() {
 	fmt.Println()
 	helpHeader("Interpolation parameters:")
 	helpOption("--factor <N>", "Slow motion factor 2,3,4,6,8,10,12,16; source FPS is kept and duration becomes N times")
-	helpOption("--sensitivity <n>", "Duplicate replacement sensitivity 0-100; rdt = sensitivity/1000, 0 disables")
+	helpOption("--sensitivity <n>", "Duplicate replacement sensitivity 0-100; rdt = sensitivity/500000, 0 disables")
 	helpOption("--rdt <v>", "Raw rdt override -0.01 to 0.2; -1 uses sensitivity")
 	fmt.Println()
 	helpHeader("Common options:")
@@ -229,7 +229,7 @@ func cmdUpscale(args []string) error {
 		Input: *in, Output: *out, Ffmpeg: ff, Ffprobe: fp,
 		ModelDir: resolveModelDir(), Model: m, Scale: *scale,
 		Params: params, GPU: *gpu, Threads: *threads, Workers: *workers, VramGB: *vram, Overlap: *overlap,
-		Auto:   *auto,
+		Auto:     *auto,
 		Provider: Provider(*provider), Device: *device, VideoDevice: *videoDevice,
 		KColor: *kcolor != 0, SceneThreshold: *sceneThreshold,
 		StartFrame: *start, EndFrame: *end,

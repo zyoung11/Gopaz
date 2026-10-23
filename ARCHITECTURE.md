@@ -129,7 +129,7 @@ Parameters with different semantics:
 | `vram` | VRAM fraction 0.1–1 | Per-session limit in GB; 0 = auto |
 | `instances` | Extra instances, default 1 | Session count; 0 = auto |
 | `workers` | Not present | Parallel workers; 0 = auto |
-| `sensitivity` | Slider 0–100 | `rdt = sensitivity/1000` |
+| `sensitivity` | Slider 0–100 | `rdt = sensitivity/500000` |
 | `rdt` | Raw threshold -0.01..0.2 | Same value; -1 uses `sensitivity` |
 
 Graph patches are applied to the in-memory ONNX only:
@@ -312,7 +312,7 @@ Duplicate frames use the fraction of significantly changed pixels:
 | Changed pixels | `changed = count(max(abs(dR), abs(dG), abs(dB)) > 10/255)` |
 | Ratio | `ratio = changed / (W*H)` |
 | Duplicate | `ratio < rdt` |
-| Threshold | `rdt = sensitivity / 1000` |
+| Threshold | `rdt = sensitivity / 500000` |
 
 If the next source frame is still a duplicate, the interval expands until a non-duplicate frame appears. Original frames inside the interval are replaced by interpolated frames; output count and FPS stay unchanged.
 
@@ -343,7 +343,7 @@ The encoder registry covers H.264, software H.264, H.265, H.265 Main10, AV1, AV1
 
 | Rate control | Behavior |
 |---|---|
-| `cq` | NVENC uses `constqp`; H.264 High/Mid/Low map to 18/25/28, H.265 to 17/25/28; encoders without CQP use defaults |
+| `cq` | NVENC uses `constqp`; H.264 High/Mid/Low map to 18/25/28, H.265 to 15/25/28; encoders without CQP use defaults |
 | `cbr` | Constant bitrate at `-b:v <N>M` |
 | `vbr` | Variable bitrate with a quality target and maximum rate |
 
@@ -426,7 +426,7 @@ Tile selection, parameter order, scene threshold, duplicate-frame threshold, kee
 | Tile-selection penalty | 0.05 |
 | Scene-change threshold | 6.5 |
 | Duplicate-frame threshold | 10/255 |
-| Duplicate-frame rdt mapping | `sensitivity/1000` |
+| Duplicate-frame rdt mapping | `sensitivity/500000` |
 | Default Aion tile budget | 2.4M pixels |
 | Tile alignment | 32 |
 | Default VRAM limit | 2 GiB |

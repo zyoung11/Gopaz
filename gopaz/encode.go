@@ -53,19 +53,19 @@ func EncoderRegistry() map[string]*EncoderSpec {
 			Family:     "qsv",
 			Base:       strings.Fields("-c:v hevc_qsv -profile:v main -pix_fmt yuv420p -tag:v hvc1 -g 30 -preset medium"),
 			Extensions: []string{"mov", "mkv", "mp4"},
-			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
+			CQP:        map[string]int{"High": 15, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
 		},
 		"h265-main-win-nvidia": {
 			ID: "h265-main-win-nvidia", Desc: "H.265 Main, NVENC, 8bit",
 			Base:       strings.Fields("-c:v hevc_nvenc -profile:v main -pix_fmt yuv420p -b_ref_mode disabled -tag:v hvc1 -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
-			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
+			CQP:        map[string]int{"High": 15, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
 		},
 		"h265-main10-win-nvidia": {
 			ID: "h265-main10-win-nvidia", Desc: "H.265 Main10, NVENC, 10bit",
 			Base:       strings.Fields("-c:v hevc_nvenc -profile:v main10 -pix_fmt p010le -b_ref_mode disabled -tag:v hvc1 -g 30"),
 			Extensions: []string{"mov", "mkv", "mp4"},
-			CQP:        map[string]int{"High": 17, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
+			CQP:        map[string]int{"High": 15, "Mid": 25, "Low": 28}, HasCQP: true, RateControl: true,
 		},
 		"av1-win-nvidia": {
 			ID: "av1-win-nvidia", Desc: "AV1, NVENC, 8bit",
@@ -228,6 +228,15 @@ func BuildArgs(opt EncodeOptions) ([]string, error) {
 		}
 	default:
 		return nil, fmt.Errorf("unknown rate control %q (use cq/cbr/vbr)", rc)
+	}
+	if e.HasCQP {
+		args = append(args, "-color_primaries", "bt709", "-color_trc", "bt709", "-colorspace", "bt709", "-color_range", "tv")
+		switch {
+		case strings.HasPrefix(e.ID, "h265"):
+			args = append(args, "-bsf:v", "hevc_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1")
+		case strings.HasPrefix(e.ID, "h264"):
+			args = append(args, "-bsf:v", "h264_metadata=colour_primaries=1:transfer_characteristics=1:matrix_coefficients=1")
+		}
 	}
 	if len(e.Extensions) > 0 {
 		args = append(args, "-movflags", "+faststart")

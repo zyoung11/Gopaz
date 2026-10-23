@@ -17,7 +17,7 @@ type InterpJob struct {
 	Factor          int
 	// RDT is the raw duplicate threshold; a negative value uses Sensitivity.
 	RDT float64
-	// Sensitivity is the Topaz 0-100 control, mapped to rdt as Sensitivity/1000.
+	// Sensitivity is the Topaz 0-100 control, mapped to rdt as Sensitivity/500000.
 	Sensitivity int
 	// Instances is the number of concurrent sessions; 0 means auto.
 	Instances int
@@ -37,6 +37,16 @@ type InterpJob struct {
 	Encode               EncodeOptions
 	AudioMode            string
 	AudioBitrate         int
+}
+
+const duplicateSensitivityScale = 500000
+
+// duplicateThreshold maps the 0-100 sensitivity control to a changed-pixel ratio.
+func duplicateThreshold(sensitivity int) float64 {
+	if sensitivity <= 0 {
+		return 0
+	}
+	return float64(sensitivity) / duplicateSensitivityScale
 }
 
 // RunInterpolate runs the interpolation pipeline.
@@ -192,13 +202,13 @@ func RunInterpolate(job InterpJob) error {
 
 	rdt := job.RDT
 	if rdt < 0 {
-		rdt = float64(job.Sensitivity) / 1000
+		rdt = duplicateThreshold(job.Sensitivity)
 	}
 	if rdt < 0 {
 		rdt = 0
 	}
 	if rdt > 0 {
-		Infof("Duplicate frame threshold rdt=%.4f", rdt)
+		Infof("Duplicate frame threshold rdt=%.6f", rdt)
 	}
 	workers := make([]*interpWorker, r.workers)
 	for i := range workers {
@@ -286,7 +296,7 @@ func RunInterpolate(job InterpJob) error {
 		Debugf("Inference detail: bottom %.1fs, main %.1fs, merge %.1fs", float64(r.bottomNanos)/1e9, float64(r.mainNanos)/1e9, float64(r.mergeNanos)/1e9)
 	}
 	if dupFrames > 0 {
-		Infof("Replaced %d duplicate frames (rdt=%.4f)", dupFrames, rdt)
+		Infof("Replaced %d duplicate frames (rdt=%.6f)", dupFrames, rdt)
 	}
 	if err := enc.Close(); err != nil {
 		os.Remove(tmpVideo)
